@@ -2,8 +2,8 @@
 
 bin_PROGRAMS = bindfs
 
-noinst_HEADERS = debug.h permchain.h userinfo.h arena.h misc.h usermap.h rate_limiter.h
-bindfs_SOURCES = bindfs.c debug.c permchain.c userinfo.c arena.c misc.c usermap.c rate_limiter.c
+noinst_HEADERS = debug.h permchain.h userinfo.h arena.h misc.h usermap.h rate_limiter.h sqlite3.h
+bindfs_SOURCES = bindfs.c debug.c permchain.c userinfo.c arena.c misc.c usermap.c rate_limiter.c sqlite3.c
 
 AM_CPPFLAGS = ${my_CPPFLAGS} ${fuse_CFLAGS} ${fuse3_CFLAGS} ${fuse_t_CFLAGS}
 AM_CFLAGS = ${my_CFLAGS}
