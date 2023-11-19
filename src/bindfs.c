@@ -832,6 +832,20 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         return -errno;
     }
 
+    if (strcmp(path, ".") == 0) {
+        // Handle the special case where path is "."
+        const char* folder1 = "sources";
+        const char* folder2 = "merged_sources";
+        #ifdef HAVE_FUSE_3
+        filler(buf, folder1, NULL, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, folder2, NULL, 0, FUSE_FILL_DIR_PLUS);
+        #else
+        filler(buf, folder1, NULL, 0);
+        filler(buf, folder2, NULL, 0);
+        #endif
+        return 0;
+    }
+
     DIR *dp = opendir(real_path);
     if (dp == NULL) {
         free(real_path);
