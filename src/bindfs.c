@@ -792,7 +792,7 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
 
     // manage case where requested path is / to set inode to 1
     if ( *path == '\0' || strcmp(path, ".") == 0 || strcmp(path, "/") == 0 ) {
-        stbuf->st_ino = 1
+        stbuf->st_ino = 1;
     }
     
     free(real_path);
