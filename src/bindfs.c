@@ -837,7 +837,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         return -errno;
     }
 
-    if (strcmp(path, "#") == 0) {
+    if (strcmp(real_path, "#") == 0) {
         // Handle the special case where path is "."
         const char* folder1 = "sources";
         const char* folder2 = "merged_sources";
