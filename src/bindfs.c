@@ -397,13 +397,13 @@ static char *process_path(const char *path, bool resolve_symlinks)
         path = ".";
     }
 
-    const char *srcprefix = "sources/";
-    const char *mrgsrcprefix = "merged_sources/";
+    const char *srcprefix = "sources";
+    const char *mrgsrcprefix = "merged_sources";
     if (strncmp(path, srcprefix, strlen(srcprefix)) == 0) {
-        path += strlen(srcprefix); // Skip the "sources/" part
+        path += strlen(srcprefix); // Skip the "sources" part
     }
     else if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0) {
-        path += strlen(mrgsrcprefix); // Skip the "sources/" part -> temp, for the moment it equals srcprefix behavior
+        path += strlen(mrgsrcprefix); // Skip the "sources" part -> temp, for the moment it equals srcprefix behavior
     }
 
     if (resolve_symlinks && settings.resolve_symlinks) {
