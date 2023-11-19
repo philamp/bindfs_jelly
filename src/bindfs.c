@@ -769,10 +769,15 @@ static int bindfs_getattr(const char *path, struct stat *stbuf,
 static int bindfs_getattr(const char *path, struct stat *stbuf)
 #endif
 {
+
+    printf("Path requested in getattr handler: %s\n", path);
     int res;
     char *real_path;
 
     real_path = process_path(path, true);
+
+    printf("Path returned after process_path in getattr handler: %s\n", real_path);
+    
     if (real_path == NULL)
         return -errno;
 
@@ -839,15 +844,24 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 {
     printf("Path requested in readdir handler: %s\n", path);
     if (*path == '\0' || strcmp(path, ".") == 0 || strcmp(path, "/") == 0){
+        struct stat sta;
+        memset(&sta, 0, sizeof(sta));
+        struct stat stb;
+        memset(&stb, 0, sizeof(stb));
+        sta.st_ino = 1; // Inode number for "sources"
+        sta.st_mode = S_IFDIR | 0755; // Set as a directory with appropriate permissions
+        stb.st_ino = 2; // Inode number for "sources"
+        stb.st_mode = S_IFDIR | 0755; // Set as a directory with appropriate permissions
+        
         // Handle the special case where path is "."
         const char* folder1 = "sources";
         const char* folder2 = "merged_sources";
         #ifdef HAVE_FUSE_3
-        filler(buf, folder1, NULL, 0, FUSE_FILL_DIR_PLUS);
-        filler(buf, folder2, NULL, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, folder1, &sta, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, folder2, &stb, 0, FUSE_FILL_DIR_PLUS);
         #else
-        filler(buf, folder1, NULL, 0);
-        filler(buf, folder2, NULL, 0);
+        filler(buf, folder1, &sta, 0);
+        filler(buf, folder2, &stb, 0);
         #endif
         return 0;
     }
