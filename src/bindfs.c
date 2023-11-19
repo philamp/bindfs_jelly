@@ -838,7 +838,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 #endif
 {
     printf("Path requested in readdir handler: %s\n", path);
-    if (*path == '\0' || strcmp(path, ".") == 0){
+    if (*path == '\0' || strcmp(path, ".") == 0 || strcmp(path, "/") == 0){
         // Handle the special case where path is "."
         const char* folder1 = "sources";
         const char* folder2 = "merged_sources";
