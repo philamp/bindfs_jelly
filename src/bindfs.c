@@ -393,8 +393,13 @@ static char *process_path(const char *path, bool resolve_symlinks)
     while (*path == '/')
         ++path;
 
-    if (*path == '\0')
-        path = ".";
+    if (*path == '\0' || strcmp(path, ".") == 0)
+        path = "#";
+
+    const char *prefix = "sources/";
+    if (strncmp(path, prefix, strlen(prefix)) == 0) {
+        path += strlen(prefix); // Skip the "sources/" part
+    }
 
     if (resolve_symlinks && settings.resolve_symlinks) {
         char* result = realpath(path, NULL);
@@ -832,7 +837,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         return -errno;
     }
 
-    if (strcmp(path, ".") == 0) {
+    if (strcmp(path, "#") == 0) {
         // Handle the special case where path is "."
         const char* folder1 = "sources";
         const char* folder2 = "merged_sources";
