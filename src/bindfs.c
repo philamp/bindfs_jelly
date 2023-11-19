@@ -393,12 +393,17 @@ static char *process_path(const char *path, bool resolve_symlinks)
     while (*path == '/')
         ++path;
 
-    if (*path == '\0' || strcmp(path, ".") == 0)
-        path = "#";
+    if (*path == '\0'){
+        path = ".";
+    }
 
-    const char *prefix = "sources/";
-    if (strncmp(path, prefix, strlen(prefix)) == 0) {
-        path += strlen(prefix); // Skip the "sources/" part
+    const char *srcprefix = "sources/";
+    const char *mrgsrcprefix = "merged_sources/";
+    if (strncmp(path, srcprefix, strlen(srcprefix)) == 0) {
+        path += strlen(srcprefix); // Skip the "sources/" part
+    }
+    else if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0) {
+        path += strlen(mrgsrcprefix); // Skip the "sources/" part -> temp, for the moment it equals srcprefix behavior
     }
 
     if (resolve_symlinks && settings.resolve_symlinks) {
@@ -832,12 +837,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                           off_t offset, struct fuse_file_info *fi)
 #endif
 {
-    char *real_path = process_path(path, true);
-    if (real_path == NULL) {
-        return -errno;
-    }
-
-    if (strcmp(real_path, "#") == 0) {
+    if (*path == '\0' || strcmp(path, ".") == 0){
         // Handle the special case where path is "."
         const char* folder1 = "sources";
         const char* folder2 = "merged_sources";
@@ -849,6 +849,11 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         filler(buf, folder2, NULL, 0);
         #endif
         return 0;
+    }
+
+    char *real_path = process_path(path, true);
+    if (real_path == NULL) {
+        return -errno;
     }
 
     DIR *dp = opendir(real_path);
