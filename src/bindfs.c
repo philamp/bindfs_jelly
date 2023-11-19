@@ -789,6 +789,12 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
     }
 
     res = getattr_common(real_path, stbuf);
+
+    // manage case where requested path is / to set inode to 1
+    if ( *path == '\0' || strcmp(path, ".") == 0 || strcmp(path, "/") == 0 ) {
+        stbuf->st_ino = 1
+    }
+    
     free(real_path);
     return res;
 }
@@ -860,10 +866,10 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         const char* folder2 = "merged_sources";
         #ifdef HAVE_FUSE_3
         filler(buf, folder1, &sta, 0, FUSE_FILL_DIR_PLUS);
-        // filler(buf, folder2, &stb, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, folder2, &stb, 0, FUSE_FILL_DIR_PLUS);
         #else
         filler(buf, folder1, &sta, 0);
-        // filler(buf, folder2, &stb, 0);
+        filler(buf, folder2, &stb, 0);
         #endif
         return 0;
     }
