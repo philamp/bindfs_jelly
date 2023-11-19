@@ -390,6 +390,15 @@ static char *process_path(const char *path, bool resolve_symlinks)
         return NULL;
     }
 
+    const char *srcprefix = "/sources";
+    const char *mrgsrcprefix = "/merged_sources";
+    if (strncmp(path, srcprefix, strlen(srcprefix)) == 0) {
+        path += strlen(srcprefix); // Skip the "/sources" part
+    }
+    else if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0) {
+        path += strlen(mrgsrcprefix); // Skip the "/merged_sources" part -> temp, for the moment it equals srcprefix behavior
+    }
+
     while (*path == '/')
         ++path;
 
@@ -397,14 +406,7 @@ static char *process_path(const char *path, bool resolve_symlinks)
         path = ".";
     }
 
-    const char *srcprefix = "sources/";
-    const char *mrgsrcprefix = "merged_sources/";
-    if (strncmp(path, srcprefix, strlen(srcprefix)) == 0) {
-        path += strlen(srcprefix); // Skip the "sources/" part
-    }
-    else if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0) {
-        path += strlen(mrgsrcprefix); // Skip the "merged_sources/" part -> temp, for the moment it equals srcprefix behavior
-    }
+
 
     if (resolve_symlinks && settings.resolve_symlinks) {
         char* result = realpath(path, NULL);
