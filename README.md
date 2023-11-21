@@ -1,3 +1,4 @@
+## Fork of BindFS with virtual paths stored in SQLite ##
 
 ## Overview ##
 
