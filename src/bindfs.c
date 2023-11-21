@@ -91,6 +91,7 @@
 #include "rate_limiter.h"
 #include "userinfo.h"
 #include "usermap.h"
+#include "sqlite3.h"
 
 /* Socket file support for MacOS and FreeBSD */
 #if defined(__APPLE__) || defined(__FreeBSD__)
