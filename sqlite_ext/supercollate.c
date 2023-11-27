@@ -1,8 +1,14 @@
 #include <sqlite3ext.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 SQLITE_EXTENSION_INIT1
-int supercompare (void*,int al,const void* av,int bl,const void* bv);
+int supercompare (void* pArg,int al,const void* av,int bl,const void* bv);
+void depth_encode(sqlite3_context* ctx, int nbargs, sqlite3_value** args);
+void depth_decode(sqlite3_context* ctx, int nbargs, sqlite3_value** args);
+int supercomparedepth (void* pArg,int al,const void* av,int bl,const void* bv);
 
 /* Insert your extension code here */
 
@@ -30,30 +36,76 @@ int sqlite3_extension_init(
   ** to register the new features that your extension adds.
   */
   sqlite3_create_collation_v2(db, "supercollate", SQLITE_UTF8, NULL, supercompare, NULL);
+  
+  sqlite3_create_collation_v2(db, "supercollatedepth", SQLITE_UTF8, NULL, supercomparedepth, NULL);
+
+  sqlite3_create_function_v2(db, "depth_encode", 1, SQLITE_UTF8, NULL, depth_encode, NULL, NULL, NULL);
+
+  sqlite3_create_function_v2(db, "depth_decode", 1, SQLITE_UTF8, NULL, depth_decode, NULL, NULL, NULL);
+
+
 
 
   return rc;
 }
 
-void depth_encode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
-    int len = sqlite3_value_bytes(args[0]);
-    const unsigned char* v = sqlite3_value_text(args[0]);
-    int nbsl = 0;
-    // check if len != 0
-    for(int i = 0; i < len; i++){
-        if (v[i] == '/'){
-            nbsl++;
-        };
+void depth_decode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
+    const unsigned char* v_orig = sqlite3_value_text(args[0]);
+    int len = strlen(v_orig);
+    if (len < 6) {
+        const char* empty = "";
+        sqlite3_result_text(ctx, empty, -1, SQLITE_STATIC); // Return the result
     }
-    // remove final slash
-    if (v[len-1] == '/'){
+
+    char* dest = malloc(len - 4); // Allocate memory for the new string
+    if (!dest) {
+        sqlite3_result_error_nomem(ctx);
+        return; // Return if memory allocation fails
+    }
+
+    strcpy(dest, v_orig + 5); // Copy starting from the 6th character
+    sqlite3_result_text(ctx, dest, -1, free); // Return the result
+}
+
+void depth_encode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
+    const unsigned char* v_orig = sqlite3_value_text(args[0]);
+    int len = strlen((char*)v_orig);
+    int nbsl = 0;
+    
+    for(int i = 0; i < len; i++) {
+        if (v_orig[i] == '/') {
+            nbsl++;
+        }
+    }
+
+    // Create a modifiable copy of v
+    unsigned char* v = malloc(len + 1); // +1 for null terminator
+    if (!v) {
+        sqlite3_result_error_nomem(ctx);
+        return;
+    }
+    strcpy((char*)v, (char*)v_orig);
+
+    if (len > 0 && v[len - 1] == '/') {
+        v[len - 1] = '\0'; // Safe to modify now
         nbsl--;
         len--;
     }
 
-    char* result = malloc(5 + len)
+    // Allocate memory for the result
+    char* result = malloc(6 + len); // depth (4) + # (1) + path (len) + null term (1)
+    if (!result) {
+        free(v); // Free the copied string
+        sqlite3_result_error_nomem(ctx);
+        return;
+    }
 
+    snprintf(result, 5, "%04x", nbsl); // Convert depth to hex
+    result[4] = '#'; // Append '#'
+    strcpy(result + 5, (char*)v); // Copy modified v to result
 
+    free(v); // Free the copied string
+    sqlite3_result_text(ctx, result, -1, free); // Return the result
 
 }
 
@@ -70,6 +122,37 @@ int supercompare (void* pArg,int al,const void* av,int bl,const void* bv){
     uint8_t xb;
     int ll = (al < bl) ? al : bl;
     for (int i = 0; i < ll; i++)
+    {
+        // read next char. '\0' is mapped to 255, the rest is in decreasing ascii order
+        xa = aa[i];
+        xb = bb[i];
+        if (xa == xb) {
+            continue;
+        }
+        // swap '/' with 0
+        if (xa == C_OLDSL || xa == C_SLH) xa^=SLXOR;
+        if (xb == C_OLDSL || xb == C_SLH) xb^=SLXOR;
+        // swap '\' with 255
+        if (xa == C_OLDEOS || xa == C_EOS) xa^=EOXOR;
+        if (xb == C_OLDEOS || xb == C_EOS) xb^=EOXOR;
+        return (xa < xb) ? -1 : 1;
+    }
+    return al - bl;
+}
+
+int supercomparedepth (void* pArg,int al,const void* av,int bl,const void* bv){
+    static const uint8_t C_EOS = 0xFF;
+    static const uint8_t C_SLH = 0x00;
+    static const uint8_t C_OLDSL = '/';
+    static const uint8_t C_OLDEOS = '\\';
+    static const uint8_t SLXOR = C_OLDSL ^ C_SLH;
+    static const uint8_t EOXOR = C_OLDEOS ^ C_EOS;
+    const char *aa = av;
+    const char *bb = bv;
+    uint8_t xa;
+    uint8_t xb;
+    int ll = (al < bl) ? al : bl;
+    for (int i = 5; i < ll; i++)
     {
         // read next char. '\0' is mapped to 255, the rest is in decreasing ascii order
         xa = aa[i];
