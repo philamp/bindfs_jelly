@@ -5,10 +5,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 SQLITE_EXTENSION_INIT1
-int supercompare (void* pArg,int al,const void* av,int bl,const void* bv);
+int supercomparelist (void* pArg,int al,const void* av,int bl,const void* bv);
 void depth_encode(sqlite3_context* ctx, int nbargs, sqlite3_value** args);
 void depth_decode(sqlite3_context* ctx, int nbargs, sqlite3_value** args);
 int supercomparedepth (void* pArg,int al,const void* av,int bl,const void* bv);
+int supercompare_sub (void* pArg,int al,const void* av,int bl,const void* bv, int start_i);
 
 /* Insert your extension code here */
 
@@ -35,16 +36,13 @@ int sqlite3_extension_init(
   **     sqlite3_vfs_register()
   ** to register the new features that your extension adds.
   */
-  sqlite3_create_collation_v2(db, "supercollate", SQLITE_UTF8, NULL, supercompare, NULL);
+  sqlite3_create_collation_v2(db, "sclist", SQLITE_UTF8, NULL, supercomparelist, NULL);
   
-  sqlite3_create_collation_v2(db, "supercollatedepth", SQLITE_UTF8, NULL, supercomparedepth, NULL);
+  sqlite3_create_collation_v2(db, "scdepth", SQLITE_UTF8, NULL, supercomparedepth, NULL);
 
-  sqlite3_create_function_v2(db, "depth_encode", 1, SQLITE_UTF8, NULL, depth_encode, NULL, NULL, NULL);
+  sqlite3_create_function_v2(db, "depenc", 1, SQLITE_UTF8, NULL, depth_encode, NULL, NULL, NULL);
 
-  sqlite3_create_function_v2(db, "depth_decode", 1, SQLITE_UTF8, NULL, depth_decode, NULL, NULL, NULL);
-
-
-
+  sqlite3_create_function_v2(db, "depdec", 1, SQLITE_UTF8, NULL, depth_decode, NULL, NULL, NULL);
 
   return rc;
 }
@@ -109,7 +107,7 @@ void depth_encode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
 
 }
 
-int supercompare (void* pArg,int al,const void* av,int bl,const void* bv){
+int supercompare_sub (void* pArg,int al,const void* av,int bl,const void* bv, int start_i){
     static const uint8_t C_EOS = 0xFF;
     static const uint8_t C_SLH = 0x00;
     static const uint8_t C_OLDSL = '/';
@@ -121,7 +119,7 @@ int supercompare (void* pArg,int al,const void* av,int bl,const void* bv){
     uint8_t xa;
     uint8_t xb;
     int ll = (al < bl) ? al : bl;
-    for (int i = 0; i < ll; i++)
+    for (int i = start_i; i < ll; i++)
     {
         // read next char. '\0' is mapped to 255, the rest is in decreasing ascii order
         xa = aa[i];
@@ -141,34 +139,11 @@ int supercompare (void* pArg,int al,const void* av,int bl,const void* bv){
 }
 
 int supercomparedepth (void* pArg,int al,const void* av,int bl,const void* bv){
-    static const uint8_t C_EOS = 0xFF;
-    static const uint8_t C_SLH = 0x00;
-    static const uint8_t C_OLDSL = '/';
-    static const uint8_t C_OLDEOS = '\\';
-    static const uint8_t SLXOR = C_OLDSL ^ C_SLH;
-    static const uint8_t EOXOR = C_OLDEOS ^ C_EOS;
-    const char *aa = av;
-    const char *bb = bv;
-    uint8_t xa;
-    uint8_t xb;
-    int ll = (al < bl) ? al : bl;
-    for (int i = 5; i < ll; i++)
-    {
-        // read next char. '\0' is mapped to 255, the rest is in decreasing ascii order
-        xa = aa[i];
-        xb = bb[i];
-        if (xa == xb) {
-            continue;
-        }
-        // swap '/' with 0
-        if (xa == C_OLDSL || xa == C_SLH) xa^=SLXOR;
-        if (xb == C_OLDSL || xb == C_SLH) xb^=SLXOR;
-        // swap '\' with 255
-        if (xa == C_OLDEOS || xa == C_EOS) xa^=EOXOR;
-        if (xb == C_OLDEOS || xb == C_EOS) xb^=EOXOR;
-        return (xa < xb) ? -1 : 1;
-    }
-    return al - bl;
+    return supercompare_sub (pArg,al,av,bl,bv,5);
+}
+
+int supercomparelist (void* pArg,int al,const void* av,int bl,const void* bv){
+    return supercompare_sub (pArg,al,av,bl,bv,0);
 }
 
 
