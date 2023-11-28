@@ -93,6 +93,8 @@
 #include "usermap.h"
 #include "sqlite3.h"
 
+sqlite3 *sqldb = NULL;
+
 /* Socket file support for MacOS and FreeBSD */
 #if defined(__APPLE__) || defined(__FreeBSD__)
 #include <sys/socket.h>
@@ -875,7 +877,19 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         return 0;
     }
 
+    // SQLITE db root is : /merged_sources
+    const char *mrgsrcprefix = "/merged_sources";
+    if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0) {
+        path += strlen(mrgsrcprefix); // Skip the "/merged_sources" part -> temp, for the moment it equals srcprefix behavior
+
+        printf("path requested looks into the sqlite db");
+    }
+
+
     char *real_path = process_path(path, true);
+
+    
+
     if (real_path == NULL) {
         return -errno;
     }
@@ -2449,6 +2463,28 @@ static bool keep_option(const char* opt)
 
 int main(int argc, char *argv[])
 {
+
+    int rc = sqlite3_open("/root/bindfs_jelly.db", &sqldb);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(sqldb));
+        sqlite3_close(sqldb);
+        return 1; // Or handle the error as appropriate
+    }
+
+    int rc2 = sqlite3_enable_load_extension(sqldb, 1);  // 1 to enable, 0 to disable
+    if (rc2 != SQLITE_OK) {
+        fprintf(stderr, "Extension loading not allowed: %s\n", sqlite3_errmsg(db));
+        // Handle error...
+    }
+
+    // TODO: change path below
+    int rc3 = sqlite3_load_extension(sqldb, "/root/dev/bindfs_jelly/sqlite_ext/supercollate.so", 0, &errMsg);
+    if (rc3 != SQLITE_OK) {
+        fprintf(stderr, "Failed to load extension: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        // Handle error...
+    }
+
     struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
     /* Fuse's option parser will store things here. */
