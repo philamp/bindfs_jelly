@@ -26,7 +26,12 @@ set(FUSE_INCLUDE_DIRS ${FUSE_INCLUDE_DIR})
 set(FUSE_USE_VERSION 29)
 set(HAVE_FUSE_29 1)
 set(HAVE_FUSE_T 1)
-message(STATUS "Found fuse I=${FUSE_INCLUDE_DIRS} L=${FUSE_LIBRARIES}")
+message(STATUS "Found fuse I=${FUSE_INCLUDE_DIRS} L=${FUSE_LIBRARIES} D=${FUSE_DEFINITIONS}")
+
+#-------- find sqlite3
+find_path(SQLITE3_INCLUDE NAMES sqlite3.h)
+find_library(SQLITE3_LIBRARY NAMES sqlite3)
+message(STATUS "Found sqlite3 I=${SQLITE3_INCLUDE} L=${SQLITE3_LIBRARY}")
 
 #-------- check dlfcn
 CHECK_INCLUDE_FILE(dlfcn.h HAVE_DLFCN_H)
@@ -73,8 +78,8 @@ set(BINDFS_SOURCES
         src/permchain.h
         src/rate_limiter.c
         src/rate_limiter.h
-        src/sqlite3.c
-        src/sqlite3.h
+	#src/sqlite3.c
+	#src/sqlite3.h
         src/userinfo.c
         src/userinfo.h
         src/usermap.c
@@ -82,9 +87,16 @@ set(BINDFS_SOURCES
 )
 
 add_executable(bindfs ${BINDFS_SOURCES})
-target_include_directories(bindfs PRIVATE ${CMAKE_BINARY_DIR}/src;/usr/include/fuse)
-target_compile_definitions(bindfs PRIVATE -D_FILE_OFFSET_BITS=64)
-target_link_libraries(bindfs ${FUSE_LIBRARIES})
+target_include_directories(bindfs PRIVATE
+    ${CMAKE_BINARY_DIR}/src
+    /usr/include/fuse # fixme: currently set by hand
+    ${FUSE_INCLUDE_DIRS}
+    ${SQLITE3_INCLUDE})
+target_compile_definitions(bindfs PRIVATE 
+    ${FUSE_DEFINITIONS})
+target_link_libraries(bindfs 
+    ${FUSE_LIBRARIES} 
+    ${SQLITE3_LIBRARY})
 
 install(TARGETS bindfs DESTINATION bin)
 install(TARGETS supercollate DESTINATION share/bindfs-jelly)
