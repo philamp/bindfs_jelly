@@ -1,4 +1,87 @@
+cmake_minimum_required(VERSION 3.10)
 project(bindfs-jelly-sqlite)
+
+find_package(PkgConfig REQUIRED)
+include(CheckIncludeFile)
+include(CheckSymbolExists)
+include(CheckStructHasMember)
+
+#-------------------- FIND FUSE
+pkg_check_modules(PC_FUSE QUIET REQUIRED fuse>=2.9)
+set(FUSE_DEFINITIONS ${PC_FUSE_CFLAGS_OTHER})
+find_path(FUSE_INCLUDE_DIR NAMES fuse.h)
+find_library(FUSE_LIBRARY NAMES fuse)
+mark_as_advanced(FUSE_INCLUDE_DIR FUSE_LIBRARY)
+
+set(PKG_CONFIG_EXECUTABLE "$ENV{PKG_CONFIG}" CACHE FILEPATH "pkg-config executable")
+if(PKG_CONFIG_EXECUTABLE)
+    execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} --modversion fuse
+            OUTPUT_VARIABLE FUSE_VERSION_STRING
+            ERROR_QUIET
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif()
+
+set(FUSE_LIBRARIES ${FUSE_LIBRARY})
+set(FUSE_INCLUDE_DIRS ${FUSE_INCLUDE_DIR})
+set(FUSE_USE_VERSION 29)
+set(HAVE_FUSE_29 1)
+set(HAVE_FUSE_T 1)
+message(STATUS "Found fuse I=${FUSE_INCLUDE_DIRS} L=${FUSE_LIBRARIES}")
+
+#-------- check dlfcn
+CHECK_INCLUDE_FILE(dlfcn.h HAVE_DLFCN_H)
+CHECK_INCLUDE_FILE(inttypes.h HAVE_INTTYPES_H)
+CHECK_INCLUDE_FILE(stdint.h HAVE_STDINT_H)
+CHECK_INCLUDE_FILE(stdio.h HAVE_STDIO_H)
+CHECK_INCLUDE_FILE(stdlib.h HAVE_STDLIB_H)
+CHECK_INCLUDE_FILE(strings.h HAVE_STRINGS_H)
+CHECK_INCLUDE_FILE(string.h HAVE_STRING_H)
+CHECK_INCLUDE_FILE(sys/file.h HAVE_SYS_FILE_H)
+CHECK_INCLUDE_FILE(sys/stat.h HAVE_SYS_STAT_H)
+CHECK_INCLUDE_FILE(sys/types.h HAVE_SYS_TYPES_H)
+CHECK_INCLUDE_FILE(unistd.h HAVE_UNISTD_H)
+check_symbol_exists(getxattr sys/xattr.h HAVE_GETXATTR)
+check_symbol_exists(lgetxattr sys/xattr.h HAVE_LGETXATTR)
+check_symbol_exists(listxattr sys/xattr.h HAVE_LISTXATTR)
+check_symbol_exists(llistxattr sys/xattr.h HAVE_LLISTXATTR)
+check_symbol_exists(lremovexattr sys/xattr.h HAVE_LREMOVEXATTR)
+check_symbol_exists(lsetxattr sys/xattr.h HAVE_LSETXATTR)
+check_symbol_exists(lutimes sys/time.h HAVE_LUTIMES)
+check_symbol_exists(utimensat "sys/stat.h;fcntl.h" HAVE_UTIMENSAT)
+check_symbol_exists(removexattr sys/xattr.h HAVE_REMOVEXATTR)
+check_symbol_exists(setxattr sys/xattr.h HAVE_SETXATTR)
+CHECK_STRUCT_HAS_MEMBER(
+  "struct stat" st_mtim.tv_nsec sys/stat.h
+  HAVE_STAT_NANOSEC LANGUAGE C)
+
+#-------- create config.h
+configure_file(src/config.cmake.in src/config.h @ONLY)
+
+#--------- Now the real stuff
 
 add_library(supercollate SHARED sqlite_ext/supercollate.c)
 
+set(BINDFS_SOURCES
+        src/arena.c
+        src/arena.h
+        src/bindfs.c
+        src/debug.c
+        src/debug.h
+        src/misc.c
+        src/misc.h
+        src/permchain.c
+        src/permchain.h
+        src/rate_limiter.c
+        src/rate_limiter.h
+        src/sqlite3.c
+        src/sqlite3.h
+        src/userinfo.c
+        src/userinfo.h
+        src/usermap.c
+        src/usermap.h
+)
+
+add_executable(bindfs ${BINDFS_SOURCES})
+target_include_directories(bindfs PRIVATE ${CMAKE_BINARY_DIR}/src;/usr/include/fuse)
+target_compile_definitions(bindfs PRIVATE -D_FILE_OFFSET_BITS=64)
+target_link_libraries(bindfs ${FUSE_LIBRARIES})
