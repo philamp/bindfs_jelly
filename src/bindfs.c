@@ -91,7 +91,7 @@
 #include "rate_limiter.h"
 #include "userinfo.h"
 #include "usermap.h"
-#include "sqlite3.h"
+#include <sqlite3.h>
 
 sqlite3 *sqldb = NULL;
 
