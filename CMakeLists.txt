@@ -85,3 +85,6 @@ add_executable(bindfs ${BINDFS_SOURCES})
 target_include_directories(bindfs PRIVATE ${CMAKE_BINARY_DIR}/src;/usr/include/fuse)
 target_compile_definitions(bindfs PRIVATE -D_FILE_OFFSET_BITS=64)
 target_link_libraries(bindfs ${FUSE_LIBRARIES})
+
+install(TARGETS bindfs DESTINATION bin)
+install(TARGETS supercollate DESTINATION share/bindfs-jelly)
