@@ -96,8 +96,8 @@
 // jelly fork global variables
 sqlite3 *sqldb = NULL;
 
-uid_t uid_jelly = -1;
-gid_t gid_jelly = -1;
+uid_t uid_jelly = 33;
+gid_t gid_jelly = 33;
 
 /* Socket file support for MacOS and FreeBSD */
 #if defined(__APPLE__) || defined(__FreeBSD__)
@@ -913,9 +913,9 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             memset(&stb, 0, sizeof(stb));
 
 
-            stb.st_ino = 1; // Inode number for "sources"
-            stb.st_mode = (*target == '\0') ? S_IFDIR | 0755 : S_IFREG | 0644; // Set as a directory with appropriate permissions
-
+            //stb.st_ino = 1; // Inode number for "sources"
+            //stb.st_mode = (*target == '\0') ? S_IFDIR | 0755 : S_IFREG | 0644; // Set as a directory with appropriate permissions
+            res = getattr_jelly(target, stb);
             
             #ifdef HAVE_FUSE_3
             filler(buf, source, &stb, 0, FUSE_FILL_DIR_PLUS);
@@ -2524,13 +2524,17 @@ int main(int argc, char *argv[])
         // Handle error...
     }
 
-    // TODO: change path below
+    // TODO: change path below TODO: update path to follow cmake
     rc = sqlite3_load_extension(sqldb, "/root/dev/bindfs_jelly/sqlite_ext/supercollate.so", 0, &errMsg);
     if (rc != SQLITE_OK) {
         fprintf(stderr, "Failed to load extension: %s\n", errMsg);
         sqlite3_free(errMsg);
         // Handle error...
     }
+
+
+
+
 
     struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
@@ -3067,7 +3071,11 @@ int main(int argc, char *argv[])
 
 static int getattr_jelly(const char *procpath, struct stat *stbuf)
 {
-    struct fuse_context *fc = fuse_get_context();
+
+stbuf->st_uid = uid_jelly;
+stbuf->st_gid = gid_jelly;
+
+
 
     /* Copy mtime (file content modification time)
        to ctime (inode/status change time)
