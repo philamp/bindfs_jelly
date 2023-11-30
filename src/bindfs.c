@@ -2463,23 +2463,24 @@ static bool keep_option(const char* opt)
 
 int main(int argc, char *argv[])
 {
-
-    int rc = sqlite3_open("/root/bindfs_jelly.db", &sqldb);
+    char *errMsg = NULL;
+    int rc = 0;
+    rc = sqlite3_open("/root/bindfs_jelly.db", &sqldb);
     if (rc != SQLITE_OK) {
         fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(sqldb));
         sqlite3_close(sqldb);
         return 1; // Or handle the error as appropriate
     }
 
-    int rc2 = sqlite3_enable_load_extension(sqldb, 1);  // 1 to enable, 0 to disable
-    if (rc2 != SQLITE_OK) {
+    rc = sqlite3_enable_load_extension(sqldb, 1);  // 1 to enable, 0 to disable
+    if (rc != SQLITE_OK) {
         fprintf(stderr, "Extension loading not allowed: %s\n", sqlite3_errmsg(sqldb));
         // Handle error...
     }
 
     // TODO: change path below
-    int rc3 = sqlite3_load_extension(sqldb, "/root/dev/bindfs_jelly/sqlite_ext/supercollate.so", 0, &errMsg);
-    if (rc3 != SQLITE_OK) {
+    int rc = sqlite3_load_extension(sqldb, "/root/dev/bindfs_jelly/sqlite_ext/supercollate.so", 0, &errMsg);
+    if (rc != SQLITE_OK) {
         fprintf(stderr, "Failed to load extension: %s\n", errMsg);
         sqlite3_free(errMsg);
         // Handle error...
