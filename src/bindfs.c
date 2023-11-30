@@ -2479,7 +2479,7 @@ int main(int argc, char *argv[])
     }
 
     // TODO: change path below
-    int rc = sqlite3_load_extension(sqldb, "/root/dev/bindfs_jelly/sqlite_ext/supercollate.so", 0, &errMsg);
+    rc = sqlite3_load_extension(sqldb, "/root/dev/bindfs_jelly/sqlite_ext/supercollate.so", 0, &errMsg);
     if (rc != SQLITE_OK) {
         fprintf(stderr, "Failed to load extension: %s\n", errMsg);
         sqlite3_free(errMsg);
