@@ -93,7 +93,11 @@
 #include "usermap.h"
 #include "sqlite3.h"
 
+// jelly fork global variables
 sqlite3 *sqldb = NULL;
+
+uid_t uid_jelly = -1;
+gid_t gid_jelly = -1;
 
 /* Socket file support for MacOS and FreeBSD */
 #if defined(__APPLE__) || defined(__FreeBSD__)
@@ -238,6 +242,8 @@ static char *process_path(const char *path, bool resolve_symlinks);
 
 /* The common parts of getattr and fgetattr. */
 static int getattr_common(const char *path, struct stat *stbuf);
+
+static int getattr_jelly(const char *procpath, struct stat *stbuf);
 
 /* Chowns a new file if necessary. */
 static int chown_new_file(const char *path, struct fuse_context *fc, int (*chown_func)(const char*, uid_t, gid_t));
@@ -882,8 +888,48 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0) {
         path += strlen(mrgsrcprefix); // Skip the "/merged_sources" part -> temp, for the moment it equals srcprefix behavior
 
-        printf("path requested looks into the sqlite db");
+        // The SQL query with placeholders
+        const char *sqlt = "select actual_fullpath, depdec(virtual_fullpath) from main_mapping where virtual_fullpath between depenc('?//') and depenc('?/\\');";
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(sqldb, sqlt, -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(db));
+            // Handle error...
+        }
+
+        rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT );
+        rc = sqlite3_bind_text(stmt, 2, path, -1, SQLITE_TRANSIENT );
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(db));
+            // Handle error...
+        }
+
+        while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+            const unsigned char *target = sqlite3_column_text(stmt, 0);
+            const unsigned char *source = sqlite3_column_text(stmt, 1);
+
+
+            struct stat stb;
+            memset(&stb, 0, sizeof(stb));
+
+
+            stb.st_ino = 1; // Inode number for "sources"
+            stb.st_mode = (*target == '\0') ? S_IFDIR | 0755 : S_IFREG | 0644; // Set as a directory with appropriate permissions
+
+            
+            #ifdef HAVE_FUSE_3
+            filler(buf, source, &stb, 0, FUSE_FILL_DIR_PLUS);
+            #else
+            filler(buf, source, &stb, 0);
+            #endif
+            //printf("Id: %d, Name: %s\n", id, name);
+        }
+
+        sqlite3_finalize(stmt);
+        printf("---path requested looks into the sqlite db---");
     }
+
+    
 
 
     char *real_path = process_path(path, true);
@@ -3017,4 +3063,95 @@ int main(int argc, char *argv[])
     close(settings.mntsrc_fd);
 
     return bindfs_init_failed ? 1 : fuse_main_return;
+}
+
+static int getattr_jelly(const char *procpath, struct stat *stbuf)
+{
+    struct fuse_context *fc = fuse_get_context();
+
+    /* Copy mtime (file content modification time)
+       to ctime (inode/status change time)
+       if the user asked for that */
+    if (settings.ctime_from_mtime) {
+#ifdef HAVE_STAT_NANOSEC
+        // TODO: does this work on OS X?
+        stbuf->st_ctim = stbuf->st_mtim;
+#else
+        stbuf->st_ctime = stbuf->st_mtime;
+#endif
+    }
+
+    /* Possibly map user/group */
+    stbuf->st_uid = usermap_get_uid_or_default(settings.usermap, stbuf->st_uid, stbuf->st_uid);
+    stbuf->st_gid = usermap_get_gid_or_default(settings.usermap, stbuf->st_gid, stbuf->st_gid);
+
+    if (!apply_uid_offset(&stbuf->st_uid)) {
+        return -UID_GID_OVERFLOW_ERRNO;
+    }
+    if (!apply_gid_offset(&stbuf->st_gid)) {
+        return -UID_GID_OVERFLOW_ERRNO;
+    }
+
+    /* Report user-defined owner/group if specified */
+    if (settings.new_uid != -1)
+        stbuf->st_uid = settings.new_uid;
+    if (settings.new_gid != -1)
+        stbuf->st_gid = settings.new_gid;
+
+    /* Mirrored user? */
+    if (is_mirroring_enabled() && is_mirrored_user(fc->uid)) {
+        stbuf->st_uid = fc->uid;
+    } else if (settings.mirrored_users_only && fc->uid != 0) {
+        stbuf->st_mode &= ~0777; /* Deny all access if mirror-only and not root */
+        return 0;
+    }
+
+    /* Hide hard links */
+    if (settings.hide_hard_links) {
+        stbuf->st_nlink = 1;
+    }
+
+    /* Block files as regular files. */
+    if (settings.block_devices_as_files && S_ISBLK(stbuf->st_mode)) {
+        stbuf->st_mode ^= S_IFBLK | S_IFREG;  // Flip both bits
+        int fd = open(procpath, O_RDONLY);
+        if (fd == -1) {
+            return -errno;
+        }
+#ifdef __linux__
+        uint64_t size;
+        ioctl(fd, BLKGETSIZE64, &size);
+        stbuf->st_size = (off_t)size;
+        if (stbuf->st_size < 0) {  // Underflow
+            close(fd);
+            return -EOVERFLOW;
+        }
+#else
+        off_t size = lseek(fd, 0, SEEK_END);
+        if (size == (off_t)-1) {
+            close(fd);
+            return -errno;
+        }
+        stbuf->st_size = size;
+#endif
+        close(fd);
+    }
+
+    /* Then permission bits. Symlink permissions don't matter, though. */
+    if ((stbuf->st_mode & S_IFLNK) != S_IFLNK) {
+        /* Apply user-defined permission bit modifications */
+        stbuf->st_mode = permchain_apply(settings.permchain, stbuf->st_mode);
+
+        /* Check that we can really do what we promise if --realistic-permissions was given */
+        if (settings.realistic_permissions) {
+            if (access(procpath, R_OK) == -1)
+                stbuf->st_mode &= ~0444;
+            if (access(procpath, W_OK) == -1)
+                stbuf->st_mode &= ~0222;
+            if (access(procpath, X_OK) == -1)
+                stbuf->st_mode &= ~0111;
+        }
+    }
+
+    return 0;
 }
