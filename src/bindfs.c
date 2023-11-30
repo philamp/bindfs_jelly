@@ -2473,7 +2473,7 @@ int main(int argc, char *argv[])
 
     int rc2 = sqlite3_enable_load_extension(sqldb, 1);  // 1 to enable, 0 to disable
     if (rc2 != SQLITE_OK) {
-        fprintf(stderr, "Extension loading not allowed: %s\n", sqlite3_errmsg(db));
+        fprintf(stderr, "Extension loading not allowed: %s\n", sqlite3_errmsg(sqldb));
         // Handle error...
     }
 
