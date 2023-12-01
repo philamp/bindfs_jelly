@@ -7,31 +7,29 @@ include(CheckSymbolExists)
 include(CheckStructHasMember)
 
 #-------------------- FIND FUSE
-pkg_check_modules(PC_FUSE QUIET REQUIRED fuse>=2.9)
-set(FUSE_DEFINITIONS ${PC_FUSE_CFLAGS_OTHER})
-find_path(FUSE_INCLUDE_DIR NAMES fuse.h)
-find_library(FUSE_LIBRARY NAMES fuse)
-mark_as_advanced(FUSE_INCLUDE_DIR FUSE_LIBRARY)
-
-set(PKG_CONFIG_EXECUTABLE "$ENV{PKG_CONFIG}" CACHE FILEPATH "pkg-config executable")
-if(PKG_CONFIG_EXECUTABLE)
-    execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} --modversion fuse
-            OUTPUT_VARIABLE FUSE_VERSION_STRING
-            ERROR_QUIET
-            OUTPUT_STRIP_TRAILING_WHITESPACE)
-endif()
-
-set(FUSE_LIBRARIES ${FUSE_LIBRARY})
-set(FUSE_INCLUDE_DIRS ${FUSE_INCLUDE_DIR})
-set(FUSE_USE_VERSION 29)
-set(HAVE_FUSE_29 1)
-set(HAVE_FUSE_T 1)
-message(STATUS "Found fuse I=${FUSE_INCLUDE_DIRS} L=${FUSE_LIBRARIES} D=${FUSE_DEFINITIONS}")
+find_path(FUSE_INCLUDE_DIR NAMES fuse3/fuse.h)
+find_library(FUSE_LIBRARY NAMES fuse3)
+if (FUSE_INCLUDE_DIR AND FUSE_LIBRARY)
+    set(FUSE_LIBRARIES ${FUSE_LIBRARY})
+    set(FUSE_INCLUDE_DIRS ${FUSE_INCLUDE_DIR}/fuse3)
+    set(FUSE_USE_VERSION 34)
+    set(HAVE_FUSE_3 1)
+    set(HAVE_FUSE_29 1)
+    set(HAVE_FUSE_T 1)
+    message(STATUS "Found fuse3 I=${FUSE_INCLUDE_DIRS} L=${FUSE_LIBRARIES}")
+else ()
+    # for now, let's crash if fuse3 is not there.
+    message(FATAL_ERROR "Fuse3 not found... please apt install libfuse3-dev (I=${FUSE_INCLUDE_DIR} L=${FUSE_LIBRARY})")
+endif ()
 
 #-------- find sqlite3
 find_path(SQLITE3_INCLUDE NAMES sqlite3.h)
 find_library(SQLITE3_LIBRARY NAMES sqlite3)
-message(STATUS "Found sqlite3 I=${SQLITE3_INCLUDE} L=${SQLITE3_LIBRARY}")
+if (SQLITE3_INCLUDE AND SQLITE3_LIBRARY)
+    message(STATUS "Found sqlite3 I=${SQLITE3_INCLUDE} L=${SQLITE3_LIBRARY}")
+else()
+    message(FATAL_ERROR "Sqlite3 not found... please apt install libsqlite3-dev (I=${SQLITE3_INCLUDE} L=${SQLITE3_LIBRARY})")
+endif()
 
 #-------- check dlfcn
 CHECK_INCLUDE_FILE(dlfcn.h HAVE_DLFCN_H)
@@ -89,7 +87,6 @@ set(BINDFS_SOURCES
 add_executable(bindfs ${BINDFS_SOURCES})
 target_include_directories(bindfs PRIVATE
     ${CMAKE_BINARY_DIR}/src
-    /usr/include/fuse # fixme: currently set by hand
     ${FUSE_INCLUDE_DIRS}
     ${SQLITE3_INCLUDE})
 target_compile_definitions(bindfs PRIVATE 
