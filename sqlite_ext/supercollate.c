@@ -49,7 +49,7 @@ int sqlite3_extension_init(
 
 void depth_decode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
     const unsigned char* v_orig = sqlite3_value_text(args[0]);
-    int len = strlen(v_orig);
+    int len = strlen((char*)v_orig);
     if (len < 6) {
         const char* empty = "";
         sqlite3_result_text(ctx, empty, -1, SQLITE_STATIC); // Return the result
@@ -61,7 +61,7 @@ void depth_decode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
         return; // Return if memory allocation fails
     }
 
-    strcpy(dest, v_orig + 5); // Copy starting from the 6th character
+    strcpy(dest, (char*)v_orig + 5); // Copy starting from the 6th character
     sqlite3_result_text(ctx, dest, -1, free); // Return the result
 }
 

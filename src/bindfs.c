@@ -905,6 +905,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             // Handle error...
         }
         printf("before stepping the query");
+        int res = 0;
         while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
             const unsigned char *target = sqlite3_column_text(stmt, 0);
             const unsigned char *source = sqlite3_column_text(stmt, 1);
@@ -916,12 +917,17 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
             //stb.st_ino = 1; // Inode number for "sources"
             //stb.st_mode = (*target == '\0') ? S_IFDIR | 0755 : S_IFREG | 0644; // Set as a directory with appropriate permissions
-            int res = getattr_jelly((char*)target, &stb);
+            res = getattr_jelly((char*)target, &stb);
+
+            if(res != 0){return -errno;}
+
+
 
             // TODO ERROR MGMT
             
             #ifdef HAVE_FUSE_3
-            printf(source);
+            //printf((char*)source);
+            printf("%s\n",(char*)source);
             filler(buf, (char*)source, &stb, 0, FUSE_FILL_DIR_PLUS);
             #else
             filler(buf, source, &stb, 0);
