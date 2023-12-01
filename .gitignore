@@ -56,3 +56,6 @@ vagrant/*/.vagrant
 
 /.idea
 /.vscode
+
+# cmake build folder
+/build

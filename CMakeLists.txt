@@ -93,7 +93,8 @@ target_compile_definitions(bindfs PRIVATE
     ${FUSE_DEFINITIONS})
 target_link_libraries(bindfs 
     ${FUSE_LIBRARIES} 
-    ${SQLITE3_LIBRARY})
+    ${SQLITE3_LIBRARY}
+    pthread)
 
 install(TARGETS bindfs DESTINATION bin)
 install(TARGETS supercollate DESTINATION share/bindfs-jelly)
