@@ -893,14 +893,14 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         sqlite3_stmt *stmt;
         int rc = sqlite3_prepare_v2(sqldb, sqlt, -1, &stmt, NULL);
         if (rc != SQLITE_OK) {
-            fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(db));
+            fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
             // Handle error...
         }
 
         rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT );
         rc = sqlite3_bind_text(stmt, 2, path, -1, SQLITE_TRANSIENT );
         if (rc != SQLITE_OK) {
-            fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(db));
+            fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
             // Handle error...
         }
 
@@ -915,7 +915,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
             //stb.st_ino = 1; // Inode number for "sources"
             //stb.st_mode = (*target == '\0') ? S_IFDIR | 0755 : S_IFREG | 0644; // Set as a directory with appropriate permissions
-            res = getattr_jelly(target, stb);
+            //res = getattr_jelly(target, stb);
             
             #ifdef HAVE_FUSE_3
             filler(buf, source, &stb, 0, FUSE_FILL_DIR_PLUS);
@@ -3071,9 +3071,10 @@ int main(int argc, char *argv[])
 
 static int getattr_jelly(const char *procpath, struct stat *stbuf)
 {
-
-stbuf->st_uid = uid_jelly;
-stbuf->st_gid = gid_jelly;
+    struct fuse_context *fc = fuse_get_context();
+    
+    stbuf->st_uid = uid_jelly;
+    stbuf->st_gid = gid_jelly;
 
 
 
