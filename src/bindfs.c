@@ -228,7 +228,7 @@ static struct Settings {
 
 static bool bindfs_init_failed = false;
 
-
+int ino = 4;
 
 /* PROTOTYPES */
 
@@ -951,6 +951,25 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
     int result = 0;
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
+        int res = 0;
+        struct stat stu;
+        res = getattr_jelly(".", &stu);
+
+        #ifdef HAVE_FUSE_3
+        if (filler(buf, ".", &stu, 0, FUSE_FILL_DIR_PLUS) != 0) {
+        #else
+        if (filler(buf, ".", &stu, 0) != 0) {
+        #endif
+        result = errno != 0 ? -errno : -EIO;
+        }
+
+        #ifdef HAVE_FUSE_3
+        if (filler(buf, "..", &stu, 0, FUSE_FILL_DIR_PLUS) != 0) {
+        #else
+        if (filler(buf, "..", &stu, 0) != 0) {
+        #endif
+        result = errno != 0 ? -errno : -EIO;
+        }
 
 
         //printf("-----before string the query-------\n", NULL);
@@ -973,7 +992,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             sqlite3_finalize(stmt);
         }
         //printf("-----before stepping the query-------\n", NULL);
-        int res = 0;
+        //int res = 0;
         //struct stat stb;
         while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
             const unsigned char *actual = sqlite3_column_text(stmt, 0);
@@ -999,8 +1018,6 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             char *lastPart = strrchr((char*)virtual, '/') +1;
 
             #ifdef HAVE_FUSE_3
-            // TODO: FUSE_FILL_DIR_PLUS doesn't work with offset==0: https://github.com/libfuse/libfuse/issues/583
-            //       Work around this by implementing the offset!=1 mode. Be careful - it's quite error-prone!
             if (filler(buf, (char*)lastPart, &stc, 0, FUSE_FILL_DIR_PLUS) != 0) {
             #else
             if (filler(buf, (char*)lastPart, &stc, 0) != 0) {
@@ -3176,10 +3193,10 @@ static int getattr_jelly(const char *procpath, struct stat *stbuf)
 {
     memset(stbuf, 0, sizeof(struct stat));
     // if target empty dont stat it, spoof everything it's a folder
-    if(*procpath == '\0'){
+    if(*procpath == '\0' || *procpath == '.'){
         stbuf->st_mode = S_IFDIR | 0755;
         stbuf->st_nlink = 2;
-        stbuf->st_ino = 3;
+        stbuf->st_ino = ino++;
         stbuf->st_size = 4096;
         stbuf->st_uid = uid_jelly; // TODO : check uid_jelly global var
         stbuf->st_gid = gid_jelly;
