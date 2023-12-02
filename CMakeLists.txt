@@ -99,4 +99,4 @@ target_link_libraries(bindfs
 install(TARGETS bindfs DESTINATION bin)
 install(TARGETS supercollate DESTINATION share/bindfs-jelly)
 
-set(CMAKE_C_FLAGS_DEBUG "-g3 -Wall -Werror")
+set(CMAKE_C_FLAGS_DEBUG "-g3")

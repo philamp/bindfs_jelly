@@ -96,8 +96,8 @@
 // jelly fork global variables
 sqlite3 *sqldb = NULL;
 
-uid_t uid_jelly = 33;
-gid_t gid_jelly = 33;
+uid_t uid_jelly = 0;
+gid_t gid_jelly = 0;
 
 /* Socket file support for MacOS and FreeBSD */
 #if defined(__APPLE__) || defined(__FreeBSD__)
@@ -401,11 +401,56 @@ static char *process_path(const char *path, bool resolve_symlinks)
 
     const char *srcprefix = "/sources";
     const char *mrgsrcprefix = "/merged_sources";
+
+    if(strcmp(path, "/merged_sources") == 0){path = ".";return strdup(path);}
+
     if (strncmp(path, srcprefix, strlen(srcprefix)) == 0) {
         path += strlen(srcprefix); // Skip the "/sources" part
     }
     else if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0) {
         path += strlen(mrgsrcprefix); // Skip the "/merged_sources" part -> temp, for the moment it equals srcprefix behavior
+    
+
+        const char *sqlt = "select IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) from main_mapping where virtual_fullpath = depenc(?)";
+        sqlite3_stmt *stmt;
+        
+        int rc = sqlite3_prepare_v2(sqldb, sqlt, -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
+            // Handle error...
+        }
+
+        rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT );
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
+            // Handle error...
+        }
+        //printf("-----before stepping the query-------\n", NULL);
+        //struct stat stb;
+        const unsigned char* target = NULL;
+        if ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+            target = sqlite3_column_text(stmt, 0);
+            printf("path_finder:%s\n",(char*)target);
+            //const unsigned char *source = sqlite3_column_text(stmt, 1);
+        }else{
+            path = ".";return strdup(path);
+        }
+
+        /*
+} else if (rc == SQLITE_DONE) {
+    // Handle the case where no more rows are available
+} else {
+    // Handle other errors
+    fprintf(stderr, "SQL error: %s\n", sqlite3_errmsg(sqldb));
+}
+*/
+        char* sqresult = strdup((char*)target);
+
+        sqlite3_finalize(stmt);
+
+        return sqresult;
+
+    
     }
 
     while (*path == '/')
@@ -791,15 +836,24 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
     
     if (real_path == NULL)
         return -errno;
+    
 
-    if (lstat(real_path, stbuf) == -1) {
-        free(real_path);
-        return -errno;
+    // jelly custom
+    const char *mrgsrcprefix = "/merged_sources/";
+    if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0){
+        printf("----jelly custom loop in getattr with path : %s\n", path);
+        res = getattr_jelly(real_path, stbuf);
+    }
+    else
+    {
+        if (lstat(real_path, stbuf) == -1) {
+            free(real_path);
+            return -errno;
+        }
+        res = getattr_common(real_path, stbuf);
     }
 
-    res = getattr_common(real_path, stbuf);
-
-    // manage case where requested path is / to set inode to 1
+    // jelly custom manage case where requested path is / to set inode to 1
     if ( *path == '\0' || strcmp(path, ".") == 0 || strcmp(path, "/") == 0 ) {
         stbuf->st_ino = 1;
     }
@@ -859,6 +913,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                           off_t offset, struct fuse_file_info *fi)
 #endif
 {
+    int ino = 3;
     printf("Path requested in readdir handler: %s\n", path);
     if (*path == '\0' || strcmp(path, ".") == 0 || strcmp(path, "/") == 0){
         struct stat sta;
@@ -885,13 +940,16 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
     // SQLITE db root is : /merged_sources
     const char *mrgsrcprefix = "/merged_sources";
+    int result = 0;
     if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0) {
+        //printf("-----before string the query-------\n", NULL);
+        
         path += strlen(mrgsrcprefix); // Skip the "/merged_sources" part -> temp, for the moment it equals srcprefix behavior
 
         // The SQL query with placeholders
-        const char *sqlt = "select actual_fullpath, depdec(virtual_fullpath) from main_mapping where virtual_fullpath between depenc(? || '//') and depenc(? || '/\\');";
+        const char *sqlt = "select IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) from main_mapping where virtual_fullpath between depenc(? || '//') and depenc(? || '/\\');";
         sqlite3_stmt *stmt;
-        printf("before preparing the query");
+        //printf("-----before prep the query-------\n", NULL);
         int rc = sqlite3_prepare_v2(sqldb, sqlt, -1, &stmt, NULL);
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
@@ -899,44 +957,69 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         }
 
         rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT );
-        rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT );
+        rc = sqlite3_bind_text(stmt, 2, path, -1, SQLITE_TRANSIENT );
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
             // Handle error...
         }
-        printf("before stepping the query");
+        //printf("-----before stepping the query-------\n", NULL);
         int res = 0;
+        //struct stat stb;
         while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
             const unsigned char *target = sqlite3_column_text(stmt, 0);
             const unsigned char *source = sqlite3_column_text(stmt, 1);
 
 
-            struct stat stb;
-            memset(&stb, 0, sizeof(stb));
+            
+            
+            struct stat stc;
+            memset(&stc, 0, sizeof(stc));
+            stc.st_ino = ino++; // Inode number for "sources"
+            stc.st_mode = (*target == '\0') ? S_IFDIR | 0755 : S_IFREG | 0644; // Set as a directory with appropriate permissions
 
 
             //stb.st_ino = 1; // Inode number for "sources"
             //stb.st_mode = (*target == '\0') ? S_IFDIR | 0755 : S_IFREG | 0644; // Set as a directory with appropriate permissions
-            res = getattr_jelly((char*)target, &stb);
+            
+            //res = getattr_jelly((char*)target, &stb);
+            //res = 0;
 
-            if(res != 0){return -errno;}
+            //if(res != 0){return -errno;}
+
+            char* ssrc = strdup((char*)source);
+            char *lastPart = strrchr(ssrc, '/');
+            lastPart++;
+
+            #ifdef HAVE_FUSE_3
+            // TODO: FUSE_FILL_DIR_PLUS doesn't work with offset==0: https://github.com/libfuse/libfuse/issues/583
+            //       Work around this by implementing the offset!=1 mode. Be careful - it's quite error-prone!
+            if (filler(buf, (char*)lastPart, &stc, 0, FUSE_FILL_DIR_PLUS) != 0) {
+            #else
+            if (filler(buf, (char*)lastPart, &stc, 0) != 0) {
+            #endif
+            result = errno != 0 ? -errno : -EIO;
+            break;
+            }
 
 
 
             // TODO ERROR MGMT
-            
+            printf("source:%s\n",(char*)source);
+            printf("target:%s\n",(char*)target);
             #ifdef HAVE_FUSE_3
             //printf((char*)source);
-            printf("%s\n",(char*)source);
-            filler(buf, (char*)source, &stb, 0, FUSE_FILL_DIR_PLUS);
+
+            free(ssrc);
+            
+            //filler(buf, (char*)source, &stb, 0, FUSE_FILL_DIR_PLUS);
             #else
-            filler(buf, source, &stb, 0);
+            //filler(buf, (char*)source, &stb, 0);
             #endif
             //printf("Id: %d, Name: %s\n", id, name);
         }
 
         sqlite3_finalize(stmt);
-        printf("---path requested looks into the sqlite db---");
+        //printf("---path requested looks into the sqlite db---\n", NULL);
         return 0;
     }
 
@@ -978,7 +1061,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     free(real_path);
     real_path = NULL;
 
-    int result = 0;
+    
     while (1) {
         errno = 0;
         struct dirent *de = readdir(dp);
@@ -3082,24 +3165,30 @@ int main(int argc, char *argv[])
 
 static int getattr_jelly(const char *procpath, struct stat *stbuf)
 {
-    struct fuse_context *fc = fuse_get_context();
-
+    
     // if target is not empty stat it!
     if(*procpath != '\0'){
         if (lstat(procpath, stbuf) == -1) {
             return -errno;
         }
+        //stbuf->st_mode = S_IFREG | 0644;
+    }else{
+        //stbuf->st_ino = 4;
+        lstat("/mounts", stbuf);
     }
-    else
-    {
-        stbuf->st_ino = 1; 
-    }
+    
+    
+     
+    
+    //stbuf->st_uid = uid_jelly;
+    //stbuf->st_gid = gid_jelly;
+    //stbuf->st_uid = 0;
+    //stbuf->st_gid = 0;
 
-    stbuf->st_uid = uid_jelly;
-    stbuf->st_gid = gid_jelly;
     // TODO CLEAN INODE
-    stbuf->st_mode = (*procpath == '\0') ? S_IFDIR | 0755 : S_IFREG | 0644;
+    //stbuf->st_mode = (*procpath == '\0') ? S_IFDIR | 0755 : S_IFREG | 0644;
 
+     struct fuse_context *fc = fuse_get_context();
 
     /* Copy mtime (file content modification time)
        to ctime (inode/status change time)
@@ -3184,6 +3273,7 @@ static int getattr_jelly(const char *procpath, struct stat *stbuf)
                 stbuf->st_mode &= ~0111;
         }
     }
+
 
     return 0;
 }
