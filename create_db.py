@@ -2,7 +2,7 @@
 import sqlite3
 
 # Path to your SQLite database file #TODO: to change
-db_path = '/root/bindfs_jelly.db'
+db_path = '/mounts/.bindfs_jelly.db'
 
 print("coucou")
 # UPDATE new_virtual_mappings SET (virtual_fullpath = '
@@ -41,7 +41,7 @@ def create_table():
         # Connect to the SQLite database
         conn = sqlite3.connect(db_path)
         conn.enable_load_extension(True)
-        conn.load_extension("/root/dev/bindfs_jelly/sqlite_ext/supercollate.so")
+        conn.load_extension("/usr/local/share/bindfs-jelly/libsupercollate.so")
         cursor = conn.cursor()
         
         # Execute the SQL command
