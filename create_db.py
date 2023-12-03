@@ -21,14 +21,14 @@ CREATE TABLE IF NOT EXISTS main_mapping (
 
 insert_data = '''
 INSERT INTO main_mapping (virtual_fullpath, actual_fullpath) VALUES 
-(depenc('/a/b/d'), "/mounts/rar2fs_remote_realdebrid/movies/Walk.The.Line.2005.MULTi.1080p.BluRay.x264-NOEX/Walk.The.Line.2005.MULTi.1080p.BluRay.x264-NOEX.mkv")
-, (depenc('/a/b/e'), "/mounts/rar2fs_remote_realdebrid/movies/Walk.The.Line.2005.MULTi.1080p.BluRay.x264-NOEX/Walk.The.Line.2005.MULTi.1080p.BluRay.x264-NOEX.nfo")
+(depenc('/a/b/d.mkv'), "/mounts/rar2fs_remote_realdebrid/movies/Walk.The.Line.2005.MULTi.1080p.BluRay.x264-NOEX/Walk.The.Line.2005.MULTi.1080p.BluRay.x264-NOEX.mkv")
+, (depenc('/a/b/e.nfo'), "/mounts/rar2fs_remote_realdebrid/movies/Walk.The.Line.2005.MULTi.1080p.BluRay.x264-NOEX/Walk.The.Line.2005.MULTi.1080p.BluRay.x264-NOEX.nfo")
 , (depenc('/a'), null)
 , (depenc('/a/t'), null)
 , (depenc('/a/b'), null)
 , (depenc('/a/b/c'), null)
 , (depenc('/a/v'), null)
-, (depenc('/a/b/c/d'), "/mounts/rar2fs_remote_realdebrid/movies/Watcher.2022.1080p.WEBRip.x265-RARBG/Watcher.2022.1080p.WEBRip.x265-RARBG.mp4");
+, (depenc('/a/b/c/d.mp4'), "/mounts/rar2fs_remote_realdebrid/movies/Watcher.2022.1080p.WEBRip.x265-RARBG/Watcher.2022.1080p.WEBRip.x265-RARBG.mp4");
 '''
 
 # usage of supercustomcollate:
