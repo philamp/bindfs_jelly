@@ -12,7 +12,7 @@ print("coucou")
 create_table_sql = '''
 CREATE TABLE IF NOT EXISTS main_mapping (
     virtual_fullpath TEXT PRIMARY KEY COLLATE SCLIST,
-    actual_fullpath TEXT UNIQUE,
+    actual_fullpath TEXT,
     jginfo_cache_ready BOOLEAN,
     jginfo_rd_torrent_folder TEXT,
     jginfo_rclone_cache_item TEXT
