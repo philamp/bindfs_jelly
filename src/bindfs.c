@@ -97,7 +97,7 @@
 sqlite3 *sqldb = NULL;
 
 uid_t uid_jelly = 33;
-gid_t gid_jelly = 33;
+gid_t gid_jelly = 0;
 
 /* Socket file support for MacOS and FreeBSD */
 #if defined(__APPLE__) || defined(__FreeBSD__)
@@ -394,7 +394,7 @@ static int is_mirrored_user(uid_t uid)
 
 static char *process_path(const char *path, bool resolve_symlinks)
 {
-    static const char SQL_PROCESS_PATH[] = "select IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) from main_mapping where virtual_fullpath = depenc(?)";
+    static const char SQL_PROCESS_PATH[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath = depenc(?)";
 
     if (path == NULL) { /* possible? */
         errno = EINVAL;
@@ -404,14 +404,18 @@ static char *process_path(const char *path, bool resolve_symlinks)
     const char *srcprefix = "/actual";
     const char *mrgsrcprefix = "/virtual";
 
-    //not nice : to handle that /merged_sources is like / but /merged_sources/x is looking into DB
-    if(strcmp(path, "/virtual") == 0){path = ".";return strdup(path);}
 
     if (strncmp(path, srcprefix, strlen(srcprefix)) == 0) {
-        path += strlen(srcprefix); // Skip the "/sources" part
+        path += strlen(srcprefix); // Skip the "/actual" part
     }
     else if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0) {
-        path += strlen(mrgsrcprefix); // Skip the "/merged_sources" part -> temp, for the moment it equals srcprefix behavior
+        path += strlen(mrgsrcprefix); // Skip the "/virtual" part
+
+        // if path is just "", there is no item to resolve in db (no empty item but is there was one it would be target null = it's a folder) 
+        if (*path == '\0'){
+        path = ".";
+        return strdup(path);
+        }
     
         sqlite3_stmt *stmt;
         
@@ -843,7 +847,7 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
     
 
     // jelly custom
-    const char *mrgsrcprefix = "/virtual/";
+    const char *mrgsrcprefix = "/virtual";
     if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0){
         printf("----jelly custom loop in getattr with path : %s\n", path);
         res = getattr_jelly(real_path, stbuf);
@@ -920,40 +924,23 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 #endif
 {
     // The SQL query with placeholders
-    static const char SQL_READDIR[] = "select IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) from main_mapping where virtual_fullpath between depenc(? || '//') and depenc(? || '/\\');";
+    static const char SQL_READDIR[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath between depenc(? || '//') AND depenc(? || '/\\');";
+    
+    int result = 0;
 
-    printf("Path requested in readdir handler: %s\n", path);
-    if (*path == '\0' || strcmp(path, ".") == 0 || strcmp(path, "/") == 0){
-        struct stat sta;
-        memset(&sta, 0, sizeof(sta));
-        struct stat stb;
-        memset(&stb, 0, sizeof(stb));
-        sta.st_ino = 1; // Inode number for "sources"
-        sta.st_mode = S_IFDIR | 0755; // Set as a directory with appropriate permissions
-        stb.st_ino = 2; // Inode number for "sources"
-        stb.st_mode = S_IFDIR | 0755; // Set as a directory with appropriate permissions
-        
-        // Handle the special case where path is "."
-        const char* folder1 = "actual";
-        const char* folder2 = "virtual";
-        #ifdef HAVE_FUSE_3
-        filler(buf, folder1, &sta, 0, FUSE_FILL_DIR_PLUS);
-        filler(buf, folder2, &stb, 0, FUSE_FILL_DIR_PLUS);
-        #else
-        filler(buf, folder1, &sta, 0);
-        filler(buf, folder2, &stb, 0);
-        #endif
-        return 0;
-    }
-
-    // SQLITE db root is : /virtual
     static const char mrgsrcprefix[] = "/virtual";
     static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
-    int result = 0;
-    if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
+
+    static const char srcprefix[] = "/actual";
+    static const int lensrcprefix = sizeof(srcprefix)-1;
+    
+
+
+    //filler . and .. when path is everything else but /actual*
+    if (!strncmp(path, srcprefix, lensrcprefix) == 0) {
         int res = 0;
         struct stat stu;
-        res = getattr_jelly(".", &stu);
+        res = getattr_jelly(".", &stu); // no error possible
 
         #ifdef HAVE_FUSE_3
         if (filler(buf, ".", &stu, 0, FUSE_FILL_DIR_PLUS) != 0) {
@@ -970,6 +957,40 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         #endif
         result = errno != 0 ? -errno : -EIO;
         }
+
+    }
+
+
+    printf("Path requested in readdir handler: %s\n", path);
+    if (*path == '\0' || strcmp(path, ".") == 0 || strcmp(path, "/") == 0){
+        /*
+        struct stat sta;
+        memset(&sta, 0, sizeof(sta));
+        struct stat stb;
+        memset(&stb, 0, sizeof(stb));
+        sta.st_ino = 1; // Inode number for "sources"
+        sta.st_mode = S_IFDIR | 0755; // Set as a directory with appropriate permissions
+        stb.st_ino = 2; // Inode number for "sources"
+        stb.st_mode = S_IFDIR | 0755; // Set as a directory with appropriate permissions
+        
+        // Handle the special case where path is "."
+        const char* folder1 = "actual";
+        const char* folder2 = "virtual";
+        */
+        #ifdef HAVE_FUSE_3
+        filler(buf, "actual", NULL, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, "virtual", NULL, 0, FUSE_FILL_DIR_PLUS);
+        #else
+        filler(buf, "actual", NULL, 0);
+        filler(buf, "virtual", NULL, 0);
+        #endif
+        return 0;
+    }
+
+    // SQLITE db root is : /virtual
+
+    if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
+        int res = 0;
 
 
         //printf("-----before string the query-------\n", NULL);
@@ -3191,128 +3212,48 @@ int main(int argc, char *argv[])
 
 static int getattr_jelly(const char *procpath, struct stat *stbuf)
 {
+    //int res = 0;
     memset(stbuf, 0, sizeof(struct stat));
     // if target empty dont stat it, spoof everything it's a folder
     if(*procpath == '\0' || *procpath == '.'){
         stbuf->st_mode = S_IFDIR | 0755;
         stbuf->st_nlink = 2;
-        stbuf->st_ino = ino++;
+        stbuf->st_ino = 3;
         stbuf->st_size = 4096;
         stbuf->st_uid = uid_jelly; // TODO : check uid_jelly global var
         stbuf->st_gid = gid_jelly;
+        //res = getattr_common(procpath, stbuf);
         return 0;
     }
-    
-    // so its a file
-    if (lstat(procpath, stbuf) == -1) {
-        return -errno;
-    }
 
+    // it's not a folder
+
+    // lstat it
+    if (lstat(procpath, stbuf) == -1) {
+    return -errno;
+    }
+    // 0- overwrite ownership
+    stbuf->st_uid = uid_jelly; // TODO : check uid_jelly global var
+    stbuf->st_gid = gid_jelly;
+
+    // 1 - link ? we go deeper
     if((stbuf->st_mode & S_IFLNK) == S_IFLNK){
         char* rpl = realpath(procpath, NULL);
         if (lstat(rpl, stbuf) == -1) {
             free(rpl);
             return -errno;
         }
+        //res = getattr_common(rpl, stbuf);
         free(rpl);
-    }
-    if((stbuf->st_mode & S_IFREG) != S_IFREG){
-        return -EINVAL;  
-    }
-    stbuf->st_uid = uid_jelly; // TODO : check uid_jelly global var
-    stbuf->st_gid = gid_jelly;
-    return 0;
-
-    // check IFLINK in stbug: do realpath, lstat
-    
-    
-
-     struct fuse_context *fc = fuse_get_context();
-
-    /* Copy mtime (file content modification time)
-       to ctime (inode/status change time)
-       if the user asked for that */
-    if (settings.ctime_from_mtime) {
-#ifdef HAVE_STAT_NANOSEC
-        // TODO: does this work on OS X?
-        stbuf->st_ctim = stbuf->st_mtim;
-#else
-        stbuf->st_ctime = stbuf->st_mtime;
-#endif
-    }
-
-    /* Possibly map user/group */
-    stbuf->st_uid = usermap_get_uid_or_default(settings.usermap, stbuf->st_uid, stbuf->st_uid);
-    stbuf->st_gid = usermap_get_gid_or_default(settings.usermap, stbuf->st_gid, stbuf->st_gid);
-
-    if (!apply_uid_offset(&stbuf->st_uid)) {
-        return -UID_GID_OVERFLOW_ERRNO;
-    }
-    if (!apply_gid_offset(&stbuf->st_gid)) {
-        return -UID_GID_OVERFLOW_ERRNO;
-    }
-
-    /* Report user-defined owner/group if specified */
-    if (settings.new_uid != -1)
-        stbuf->st_uid = settings.new_uid;
-    if (settings.new_gid != -1)
-        stbuf->st_gid = settings.new_gid;
-
-    /* Mirrored user? */
-    if (is_mirroring_enabled() && is_mirrored_user(fc->uid)) {
-        stbuf->st_uid = fc->uid;
-    } else if (settings.mirrored_users_only && fc->uid != 0) {
-        stbuf->st_mode &= ~0777; /* Deny all access if mirror-only and not root */
         return 0;
+    }    
+    // 2 - alien ?
+    if((stbuf->st_mode & S_IFREG) != S_IFREG){
+    return -EINVAL;  
     }
 
-    /* Hide hard links */
-    if (settings.hide_hard_links) {
-        stbuf->st_nlink = 1;
-    }
-
-    /* Block files as regular files. */
-    if (settings.block_devices_as_files && S_ISBLK(stbuf->st_mode)) {
-        stbuf->st_mode ^= S_IFBLK | S_IFREG;  // Flip both bits
-        int fd = open(procpath, O_RDONLY);
-        if (fd == -1) {
-            return -errno;
-        }
-#ifdef __linux__
-        uint64_t size;
-        ioctl(fd, BLKGETSIZE64, &size);
-        stbuf->st_size = (off_t)size;
-        if (stbuf->st_size < 0) {  // Underflow
-            close(fd);
-            return -EOVERFLOW;
-        }
-#else
-        off_t size = lseek(fd, 0, SEEK_END);
-        if (size == (off_t)-1) {
-            close(fd);
-            return -errno;
-        }
-        stbuf->st_size = size;
-#endif
-        close(fd);
-    }
-
-    /* Then permission bits. Symlink permissions don't matter, though. */
-    if ((stbuf->st_mode & S_IFLNK) != S_IFLNK) {
-        /* Apply user-defined permission bit modifications */
-        stbuf->st_mode = permchain_apply(settings.permchain, stbuf->st_mode);
-
-        /* Check that we can really do what we promise if --realistic-permissions was given */
-        if (settings.realistic_permissions) {
-            if (access(procpath, R_OK) == -1)
-                stbuf->st_mode &= ~0444;
-            if (access(procpath, W_OK) == -1)
-                stbuf->st_mode &= ~0222;
-            if (access(procpath, X_OK) == -1)
-                stbuf->st_mode &= ~0111;
-        }
-    }
-
-
+    // 3 - no it's a regfile (just return 0; nothing else to do)
+    //res = getattr_common(procpath, stbuf);
     return 0;
+
 }
