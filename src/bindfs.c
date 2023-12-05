@@ -401,20 +401,24 @@ static char *process_path(const char *path, bool resolve_symlinks)
         return NULL;
     }
 
-    const char *srcprefix = "/actual";
-    const char *mrgsrcprefix = "/virtual";
+    // TODO : it's repeated in function readdir
+    static const char srcprefix[] = "/actual";
+    static const int lensrcprefix = sizeof(srcprefix)-1;
+
+    static const char mrgsrcprefix[] = "/virtual";
+    static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
 
 
-    if (strncmp(path, srcprefix, strlen(srcprefix)) == 0) {
-        path += strlen(srcprefix); // Skip the "/actual" part
+    if (strncmp(path, srcprefix, lensrcprefix) == 0) {
+        path += lensrcprefix; // Skip the "/actual" part
     }
-    else if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0) {
-        path += strlen(mrgsrcprefix); // Skip the "/virtual" part
+    else if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
+        path += lenmrgsrcprefix; // 1 - Skip the "/virtual" part
 
-        // if path is just "", there is no item to resolve in db (no empty item but is there was one it would be target null = it's a folder) 
+        // 2- if then path is just "", there is no item to resolve in db (so it's a folder) 
         if (*path == '\0'){
-        path = ".";
-        return strdup(path);
+            path = ".";
+            return strdup(path);
         }
     
         sqlite3_stmt *stmt;
@@ -928,6 +932,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     
     int result = 0;
 
+    // TODO : it's repeated in function process_path
     static const char mrgsrcprefix[] = "/virtual";
     static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
 
@@ -977,9 +982,13 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         const char* folder1 = "actual";
         const char* folder2 = "virtual";
         */
+        int res = 0;
+        struct stat stu;
+        res = getattr_jelly(".", &stu);
+
         #ifdef HAVE_FUSE_3
-        filler(buf, "actual", NULL, 0, FUSE_FILL_DIR_PLUS);
-        filler(buf, "virtual", NULL, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, "actual", &stu, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, "virtual", &stu, 0, FUSE_FILL_DIR_PLUS);
         #else
         filler(buf, "actual", NULL, 0);
         filler(buf, "virtual", NULL, 0);
