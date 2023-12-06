@@ -1292,8 +1292,62 @@ static int bindfs_rename(const char *from, const char *to, unsigned int flags)
 static int bindfs_rename(const char *from, const char *to)
 #endif
 {
+    static const char SQL_RENAME_PCHECK[] = "select depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath = depenc(?)";
+
     int res;
     char *real_from, *real_to;
+
+    // remove the last /part of the TO path
+    // find the pos excluding last /
+
+    // REMEMBER TO FREE to_parent_path
+
+    char *to_sl = strrchr((char*)to, '/');
+
+    if (to_sl != NULL) {
+        char* to_parent_path = malloc((to_sl - to) +1); 
+        strncpy(to_parent_path, to, (to_sl - to));
+        to_parent_path[to_sl - to] = '\0';
+    }
+
+    // do the select parent existing knowing that if *to_parent_path is empty we are in the root and by definition root is existing so we can rename
+    if(*to_parent_path != '\0'){
+        // do the select
+        // prepare
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(sqldb, SQL_RENAME_PCHECK, -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            errno = ENOENT;
+            return NULL;
+        }
+
+        // bind
+        rc = sqlite3_bind_text(stmt, 1, to_parent_path, -1, SQLITE_TRANSIENT );
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            errno = ENOENT;
+            return NULL;
+        }
+
+        
+
+        // if no parent : return -EPERM
+
+    }
+    // no need for else we continue
+
+    // MVP without predelete / overwrite
+
+     //RENAME
+
+
+
+
+
+
 
     if (settings.rename_deny)
         return -EPERM;
