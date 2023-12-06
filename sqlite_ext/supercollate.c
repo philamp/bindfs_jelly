@@ -48,21 +48,18 @@ int sqlite3_extension_init(
 }
 
 void depth_decode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
-    const unsigned char* v_orig = sqlite3_value_text(args[0]);
-    int len = strlen((char*)v_orig);
+    static const char EMPTY[] = "";
+    if (nbargs!=1) {
+        return sqlite3_result_error(ctx, "Function accepts only 1 argument", SQLITE_ERROR);
+    }
+    const char* v_orig = (char*) sqlite3_value_text(args[0]);
+    size_t len = strlen(v_orig);
     if (len < 6) {
-        const char* empty = "";
-        sqlite3_result_text(ctx, empty, -1, SQLITE_STATIC); // Return the result
+        return sqlite3_result_text(ctx, EMPTY, 0, SQLITE_STATIC); // Return the result
     }
-
-    char* dest = malloc(len - 4); // Allocate memory for the new string
-    if (!dest) {
-        sqlite3_result_error_nomem(ctx);
-        return; // Return if memory allocation fails
-    }
-
-    strcpy(dest, (char*)v_orig + 5); // Copy starting from the 6th character
-    sqlite3_result_text(ctx, dest, -1, free); // Return the result
+    // we already know the strlen of the result, so we pass it directly
+    // let sql handle the copy internally (a little bit more efficient than if we malloc it).
+    sqlite3_result_text(ctx, v_orig+5, len-5, SQLITE_TRANSIENT);
 }
 
 void depth_encode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
