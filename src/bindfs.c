@@ -243,7 +243,9 @@ static char *process_path(const char *path, bool resolve_symlinks);
 /* The common parts of getattr and fgetattr. */
 static int getattr_common(const char *path, struct stat *stbuf);
 
-static int getattr_jelly(const char *procpath, struct stat *stbuf);
+static int getattr_jelly(const char *procpath, struct stat *stbuf, const char* virtual_path);
+
+uint64_t djb2_hash(const char *str);
 
 /* Chowns a new file if necessary. */
 static int chown_new_file(const char *path, struct fuse_context *fc, int (*chown_func)(const char*, uid_t, gid_t));
@@ -854,7 +856,7 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
     const char *mrgsrcprefix = "/virtual";
     if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0){
         printf("----jelly custom loop in getattr with path : %s\n", path);
-        res = getattr_jelly(real_path, stbuf);
+        res = getattr_jelly(real_path, stbuf, path);
     }
     else
     {
@@ -943,22 +945,24 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
     //filler . and .. when path is everything else but /actual*
     if (!strncmp(path, srcprefix, lensrcprefix) == 0) {
-        int res = 0;
+        
+        /*int res = 0;
         struct stat stu;
-        res = getattr_jelly(".", &stu); // no error possible
+        res = getattr_jelly(".", &stu, "."); // no error possible
+        */
 
         #ifdef HAVE_FUSE_3
-        if (filler(buf, ".", &stu, 0, FUSE_FILL_DIR_PLUS) != 0) {
+        if (filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS) != 0) {
         #else
-        if (filler(buf, ".", &stu, 0) != 0) {
+        if (filler(buf, ".", NULL, 0) != 0) {
         #endif
         result = errno != 0 ? -errno : -EIO;
         }
 
         #ifdef HAVE_FUSE_3
-        if (filler(buf, "..", &stu, 0, FUSE_FILL_DIR_PLUS) != 0) {
+        if (filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS) != 0) {
         #else
-        if (filler(buf, "..", &stu, 0) != 0) {
+        if (filler(buf, "..", NULL, 0) != 0) {
         #endif
         result = errno != 0 ? -errno : -EIO;
         }
@@ -983,15 +987,17 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         const char* folder2 = "virtual";
         */
         int res = 0;
-        struct stat stu;
-        res = getattr_jelly(".", &stu);
+        struct stat sta;
+        res = getattr_jelly(".", &sta, srcprefix);
+        struct stat stb;
+        res = getattr_jelly(".", &stb, mrgsrcprefix);
 
         #ifdef HAVE_FUSE_3
-        filler(buf, "actual", &stu, 0, FUSE_FILL_DIR_PLUS);
-        filler(buf, "virtual", &stu, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, "actual", &sta, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, "virtual", &stb, 0, FUSE_FILL_DIR_PLUS);
         #else
-        filler(buf, "actual", NULL, 0);
-        filler(buf, "virtual", NULL, 0);
+        filler(buf, "actual", &sta, 0);
+        filler(buf, "virtual", &stb, 0);
         #endif
         return 0;
     }
@@ -1029,7 +1035,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             const unsigned char *virtual = sqlite3_column_text(stmt, 1);
 
             struct stat stc;
-            res = getattr_jelly((char*)actual, &stc);
+            res = getattr_jelly((char*)actual, &stc, path);
             if(res != 0){
                 printf("File targeted by Path %s does not exist, error is: %s",actual,strerror(-res));
             }
@@ -3219,7 +3225,7 @@ int main(int argc, char *argv[])
     return bindfs_init_failed ? 1 : fuse_main_return;
 }
 
-static int getattr_jelly(const char *procpath, struct stat *stbuf)
+static int getattr_jelly(const char *procpath, struct stat *stbuf, const char* virtual_path)
 {
     //int res = 0;
     memset(stbuf, 0, sizeof(struct stat));
@@ -3227,7 +3233,7 @@ static int getattr_jelly(const char *procpath, struct stat *stbuf)
     if(*procpath == '\0' || *procpath == '.'){
         stbuf->st_mode = S_IFDIR | 0755;
         stbuf->st_nlink = 2;
-        stbuf->st_ino = 3;
+        stbuf->st_ino = (ino_t)djb2_hash(virtual_path);
         stbuf->st_size = 4096;
         stbuf->st_uid = uid_jelly; // TODO : check uid_jelly global var
         stbuf->st_gid = gid_jelly;
@@ -3241,9 +3247,8 @@ static int getattr_jelly(const char *procpath, struct stat *stbuf)
     if (lstat(procpath, stbuf) == -1) {
     return -errno;
     }
-    // 0- overwrite ownership
-    stbuf->st_uid = uid_jelly; // TODO : check uid_jelly global var
-    stbuf->st_gid = gid_jelly;
+
+
 
     // 1 - link ? we go deeper
     if((stbuf->st_mode & S_IFLNK) == S_IFLNK){
@@ -3254,6 +3259,11 @@ static int getattr_jelly(const char *procpath, struct stat *stbuf)
         }
         //res = getattr_common(rpl, stbuf);
         free(rpl);
+        // *- ow
+        stbuf->st_uid = uid_jelly; // TODO : check uid_jelly global var
+        stbuf->st_gid = gid_jelly;
+        stbuf->st_ino = (ino_t)djb2_hash(virtual_path);
+
         return 0;
     }    
     // 2 - alien ?
@@ -3261,8 +3271,24 @@ static int getattr_jelly(const char *procpath, struct stat *stbuf)
     return -EINVAL;  
     }
 
-    // 3 - no it's a regfile (just return 0; nothing else to do)
+    // 3 - no it's a regfile
     //res = getattr_common(procpath, stbuf);
+    // *- ow
+    stbuf->st_uid = uid_jelly; // TODO : check uid_jelly global var
+    stbuf->st_gid = gid_jelly;
+    stbuf->st_ino = (ino_t)djb2_hash(virtual_path);
+
     return 0;
 
+}
+
+uint64_t djb2_hash(const char *str) {
+    uint64_t hash = 5381;
+    int c;
+
+    while ((c = *str++)) {
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+    }
+
+    return hash;
 }
