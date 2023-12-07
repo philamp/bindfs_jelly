@@ -63,7 +63,7 @@ void depth_decode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
 }
 
 void depth_encode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
-    const unsigned char* v = sqlite3_value_text(args[0]);
+    const char* v = (char*)sqlite3_value_text(args[0]);
     int len = strlen((char*)v);
     int nbsl = 0;
     
@@ -72,19 +72,8 @@ void depth_encode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
             nbsl++;
         }
     }
-
-    /* Create a modifiable copy of v - NOT USEFUL ANYMORE
-    unsigned char* v = malloc(len + 1); // +1 for null terminator
-    if (!v) {
-        sqlite3_result_error_nomem(ctx);
-        return;
-    }
-    strcpy((char*)v, (char*)v_orig);
-    */ - NOT USEFUL ANYMORE
   
-
     if (len > 0 && v[len - 1] == '/') {
-        v[len - 1] = '\0'; // Safe to modify now
         nbsl--;
         len--;
     }
@@ -92,16 +81,15 @@ void depth_encode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
     // Allocate memory for the result
     char* result = malloc(6 + len); // depth (4) + # (1) + path (len) + null term (1)
     if (!result) {
-        free(v); // Free the copied string
         sqlite3_result_error_nomem(ctx);
         return;
     }
 
     snprintf(result, 5, "%04x", nbsl); // Convert depth to hex
     result[4] = '#'; // Append '#'
-    strcpy(result + 5, (char*)v); // Copy v to result
+    strncpy(result + 5, (char*)v, len); // Copy v to result
+    result[len + 5] = '\0';
 
-    free(v); // Free the copied string
     sqlite3_result_text(ctx, result, -1, free); // Return the result
 
 }

@@ -1303,9 +1303,10 @@ static int bindfs_rename(const char *from, const char *to)
     // REMEMBER TO FREE to_parent_path
 
     char *to_sl = strrchr((char*)to, '/');
+    char *to_parent_path;
 
     if (to_sl != NULL) {
-        char* to_parent_path = malloc((to_sl - to) +1); 
+        to_parent_path = malloc((to_sl - to) +1); 
         strncpy(to_parent_path, to, (to_sl - to));
         to_parent_path[to_sl - to] = '\0';
     }
