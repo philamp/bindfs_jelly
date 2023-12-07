@@ -930,7 +930,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 #endif
 {
     // The SQL query with placeholders
-    static const char SQL_READDIR[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath between depenc(? || '//') AND depenc(? || '/\\');";
+    static const char SQL_READDIR[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\');";
     
     int result = 0;
 
@@ -1292,7 +1292,22 @@ static int bindfs_rename(const char *from, const char *to, unsigned int flags)
 static int bindfs_rename(const char *from, const char *to)
 #endif
 {
-    static const char SQL_RENAME_PCHECK[] = "select depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath = depenc(?)";
+
+    // TODO : it's repeated in function readdir :(
+    static const char srcprefix[] = "/actual";
+    static const int lensrcprefix = sizeof(srcprefix)-1;
+
+    static const char mrgsrcprefix[] = "/virtual";
+    static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
+
+    static const char SQL_RENAME_PCHECK[] = "SELECT depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath = depenc(?)";
+
+    static const char SQL_RENAME_DEPTH[] = "UPDATE main_mapping SET virtual_fullpath = depenc( ? || SUBSTR(virtual_fullpath, ?)) WHERE virtual_fullpath BETWEEN depenc( ? ) AND depenc( ? || '/\\') collate scdepth";
+    // order of args is : 
+    // to
+    // , strlen(to) + 1 + 6 
+    // , from
+    // , from
 
     int res;
     char *real_from, *real_to;
@@ -1301,6 +1316,12 @@ static int bindfs_rename(const char *from, const char *to)
     // find the pos excluding last /
 
     // REMEMBER TO FREE to_parent_path
+    
+
+    // TODO : permit the move rename only if dest start = src start = /virtual
+
+    // TODO: test what happens if rename to /abcd/ instead of /abcd (does fuse already remove the last useless slash ?)
+
 
     char *to_sl = strrchr((char*)to, '/');
     char *to_parent_path;
@@ -1320,8 +1341,7 @@ static int bindfs_rename(const char *from, const char *to)
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
-            errno = ENOENT;
-            return NULL;
+            return -ENOENT;
         }
 
         // bind
@@ -1329,8 +1349,12 @@ static int bindfs_rename(const char *from, const char *to)
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
-            errno = ENOENT;
-            return NULL;
+            return -ENOENT;
+        }
+
+        // check if no result -> no parent -> this is so sad :'(
+        if ((rc = sqlite3_step(stmt)) == SQLITE_DONE) {
+            return -EPERM;
         }
 
         
@@ -1342,7 +1366,8 @@ static int bindfs_rename(const char *from, const char *to)
 
     // MVP without predelete / overwrite
 
-     //RENAME
+    // LETTTTSSSSS RENAME
+
 
 
 
