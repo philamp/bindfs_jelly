@@ -85,8 +85,7 @@ void depth_encode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
         return;
     }
 
-    snprintf(result, 5, "%04x", nbsl); // Convert depth to hex
-    result[4] = '#'; // Append '#'
+    snprintf(result, 6, "%04x#", nbsl); // Convert depth to hex
     strncpy(result + 5, (char*)v, len); // Copy v to result
     result[len + 5] = '\0';
 
