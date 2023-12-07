@@ -1300,14 +1300,10 @@ static int bindfs_rename(const char *from, const char *to)
     static const char mrgsrcprefix[] = "/virtual";
     static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
 
-    static const char SQL_RENAME_PCHECK[] = "SELECT depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath = depenc(?)";
+    static const char SQL_RENAME_PCHECK[] = "SELECT depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath = depenc(?) AND actual_fullpath IS NULL";
 
     static const char SQL_RENAME_DEPTH[] = "UPDATE main_mapping SET virtual_fullpath = depenc( ? || SUBSTR(virtual_fullpath, ?)) WHERE virtual_fullpath BETWEEN depenc( ? ) AND depenc( ? || '/\\') collate scdepth";
-    // order of args is : 
-    // to
-    // , strlen(to) + 1 + 6 
-    // , from
-    // , from
+
 
     int res;
     char *real_from, *real_to;
@@ -1321,57 +1317,105 @@ static int bindfs_rename(const char *from, const char *to)
     // TODO : permit the move rename only if dest start = src start = /virtual
 
     // TODO: test what happens if rename to /abcd/ instead of /abcd (does fuse already remove the last useless slash ?)
+    if (strncmp(to, mrgsrcprefix, lenmrgsrcprefix) == 0) {
+        to += lenmrgsrcprefix; // Skip the "/actual" part
+        printf("-----------------jelly mv called-------------- \n", NULL);
+        char *to_sl = strrchr((char*)to, '/');
+        char *to_parent_path;
+
+        if (to_sl != NULL) {
+            to_parent_path = malloc((to_sl - to) +1); 
+            strncpy(to_parent_path, to, (to_sl - to));
+            to_parent_path[to_sl - to] = '\0';
+        }
+
+        printf("-----------------jelly mv called with parent path = %s -------------- \n", to_parent_path);
+
+        // do the select parent existing knowing that if *to_parent_path is empty we are in the root and by definition root is existing so we can rename
+        if(*to_parent_path != '\0'){
+            // do the select
+            // prepare
+            sqlite3_stmt *stmt;
+            int rc = sqlite3_prepare_v2(sqldb, SQL_RENAME_PCHECK, -1, &stmt, NULL);
+            if (rc != SQLITE_OK) {
+                fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
+                sqlite3_finalize(stmt);
+                return -ENOENT;
+            }
 
 
-    char *to_sl = strrchr((char*)to, '/');
-    char *to_parent_path;
+            rc = sqlite3_bind_text(stmt, 1, to_parent_path, -1, SQLITE_TRANSIENT );
+            if (rc != SQLITE_OK) {
+                fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
+                sqlite3_finalize(stmt);
+                return -ENOENT;
+            }
 
-    if (to_sl != NULL) {
-        to_parent_path = malloc((to_sl - to) +1); 
-        strncpy(to_parent_path, to, (to_sl - to));
-        to_parent_path[to_sl - to] = '\0';
-    }
 
-    // do the select parent existing knowing that if *to_parent_path is empty we are in the root and by definition root is existing so we can rename
-    if(*to_parent_path != '\0'){
-        // do the select
-        // prepare
+            // check if no result -> no parent -> this is so sad :'(
+            if ((rc = sqlite3_step(stmt)) == SQLITE_DONE) {
+                return -ENOENT;
+            }
+
+        }
+
+
+        // MVP without predelete / overwrite TODO: with overwrite
+        // LETTTTSSSSS RENAME ---------------------
+
+
         sqlite3_stmt *stmt;
-        int rc = sqlite3_prepare_v2(sqldb, SQL_RENAME_PCHECK, -1, &stmt, NULL);
+        int rc = sqlite3_prepare_v2(sqldb, SQL_RENAME_DEPTH, -1, &stmt, NULL);
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
             return -ENOENT;
         }
 
-        // bind
-        rc = sqlite3_bind_text(stmt, 1, to_parent_path, -1, SQLITE_TRANSIENT );
+        // order of args is : 
+        // 1) to
+        // 2) strlen(to) + 1 + 6 
+        // 3) from
+        // 4) from
+        rc = sqlite3_bind_text(stmt, 1, to, -1, SQLITE_TRANSIENT );
         if (rc != SQLITE_OK) {
-            fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
+            fprintf(stderr, "Failed to bind text 1): %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
             return -ENOENT;
         }
 
-        // check if no result -> no parent -> this is so sad :'(
-        if ((rc = sqlite3_step(stmt)) == SQLITE_DONE) {
-            return -EPERM;
+        const int tolkien = strlen(to) + 7;
+
+        rc = sqlite3_bind_int(stmt, 2, tolkien);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to bind int 2): %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            return -ENOENT;
         }
 
-        
+        rc = sqlite3_bind_text(stmt, 3, from, -1, SQLITE_TRANSIENT );
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to bind text 3): %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            return -ENOENT;
+        }
 
-        // if no parent : return -EPERM
+        rc = sqlite3_bind_text(stmt, 4, from, -1, SQLITE_TRANSIENT );
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to bind text 4): %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            return -ENOENT;
+        }
+
+        if ( (rc = sqlite3_step(stmt)) != SQLITE_DONE) {
+            fprintf(stderr, "Execution of rename failed: %s\n", sqlite3_errmsg(sqldb));
+            return -ENOENT;
+        } else {
+            printf("Renamed successfully\n");
+            return 0;
+        }
 
     }
-    // no need for else we continue
-
-    // MVP without predelete / overwrite
-
-    // LETTTTSSSSS RENAME
-
-
-
-
-
 
 
 
