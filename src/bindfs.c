@@ -792,7 +792,7 @@ static void *bindfs_init()
 {
     #ifdef HAVE_FUSE_3
     (void) conn;
-    cfg->use_ino = 1;
+    cfg->use_ino = 0;
 
     // Disable caches so changes in base FS are visible immediately.
     // Especially the attribute cache must be disabled when different users
@@ -1258,6 +1258,8 @@ static int bindfs_unlink(const char *path)
 static int bindfs_rmdir(const char *path)
 {
     return delete_file(path, &rmdir);
+
+    
 }
 
 static int bindfs_symlink(const char *from, const char *to)
@@ -1328,9 +1330,14 @@ static int bindfs_rename(const char *from, const char *to)
 
         // remove the last /part of the TO path to create TO_PARENT_PATH
         if (to_sl != NULL) {
-            to_parent_path = malloc((to_sl - to) +1); 
+            to_parent_path = malloc((to_sl - to) +1);
+            if (to_parent_path == NULL) {
+                return -ENOMEM; 
+            }
             strncpy(to_parent_path, to, (to_sl - to));
             to_parent_path[to_sl - to] = '\0';
+        }else{
+            return -EPERM; // aw there should always be a "/" in the 'to' string
         }
 
         printf("-----------------jelly mv called with parent path = %s -------------- \n -------and from = %s ------- \n -------and to = %s ------- \n", to_parent_path, from, to);
@@ -1344,6 +1351,7 @@ static int bindfs_rename(const char *from, const char *to)
             if (rc != SQLITE_OK) {
                 fprintf(stderr, "PC : Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
                 sqlite3_finalize(stmt);
+                free(to_parent_path);
                 return -EPERM;
             }
 
@@ -1352,6 +1360,7 @@ static int bindfs_rename(const char *from, const char *to)
             if (rc != SQLITE_OK) {
                 fprintf(stderr, "PC : Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
                 sqlite3_finalize(stmt);
+                free(to_parent_path);
                 return -EPERM;
             }
 
@@ -1359,15 +1368,17 @@ static int bindfs_rename(const char *from, const char *to)
             // check if no result -> no parent -> this is so sad :'(
             if ((rc = sqlite3_step(stmt)) == SQLITE_DONE) {
                 sqlite3_finalize(stmt);
+                free(to_parent_path);
                 return -EPERM;
             }
 
         }
+        free(to_parent_path);
 
 
         // use process_path to know if it's a folder or file
         char *chkfolder = process_path(from, true);
-        from += lenmrgsrcprefix; // from here we need to have from and to paths with same roots as in db
+        from += lenmrgsrcprefix; // from here we need to have 'from' and 'to' paths with same roots as in database
         if(*chkfolder != '\0'){
             free(chkfolder); // we don't need it anymore
             // it's a file, we can rename it and that's all folks
@@ -2192,7 +2203,7 @@ static struct fuse_operations bindfs_oper = {
     .fsync      = bindfs_fsync,
 #ifdef HAVE_SETXATTR
     .setxattr   = bindfs_setxattr,
-    .getxattr   = bindfs_getxattr,
+    //.getxattr   = bindfs_getxattr,
     .listxattr  = bindfs_listxattr,
     .removexattr= bindfs_removexattr,
 #endif
