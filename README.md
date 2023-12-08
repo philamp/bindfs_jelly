@@ -1,5 +1,9 @@
 ## Fork of BindFS with virtual paths stored in SQLite ##
 
+### WARNING
+This fork has some former functionnalities butchered for the moment:
+* getxattr won't return a regular value for virtual folders, instead it will return ....TODO
+
 ## Overview ##
 
 bindfs  -  https://bindfs.org/
