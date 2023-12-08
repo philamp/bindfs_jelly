@@ -1259,6 +1259,7 @@ static int bindfs_rmdir(const char *path)
 {
     return delete_file(path, &rmdir);
 
+    // implement rmdir thru db
     
 }
 
