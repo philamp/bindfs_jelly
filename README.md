@@ -2,7 +2,7 @@
 
 ### WARNING
 This fork has some former functionnalities butchered for the moment:
-* getxattr won't return a regular value for virtual folders, instead it will return ....TODO
+* getxattr is not implemented anymore and this FS will act has no xattr is existing
 
 ## Overview ##
 
