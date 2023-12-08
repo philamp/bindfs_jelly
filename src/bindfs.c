@@ -1300,18 +1300,21 @@ static int bindfs_rename(const char *from, const char *to)
     static const char mrgsrcprefix[] = "/virtual";
     static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
 
-    static const char SQL_RENAME_PCHECK[] = "SELECT depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath = depenc(?) AND actual_fullpath IS NULL";
-
+    // PC
+    static const char SQL_RENAME_PCHECK[] = "SELECT virtual_fullpath FROM main_mapping WHERE virtual_fullpath = depenc(?) AND actual_fullpath IS NULL"; // depdec not needed in the select here
+    // RD
     static const char SQL_RENAME_DEPTH[] = "UPDATE main_mapping SET virtual_fullpath = depenc( ? || SUBSTR(virtual_fullpath, ?)) WHERE virtual_fullpath BETWEEN depenc( ? ) AND depenc( ? || '/\\') collate scdepth";
+    // DR
+    static const char SQL_SIMPLE_RENAME[] = "UPDATE main_mapping SET virtual_fullpath = depenc( ? ) WHERE virtual_fullpath = depenc( ? )";
 
 
     int res;
     char *real_from, *real_to;
 
-    // remove the last /part of the TO path
-    // find the pos excluding last /
+    
+    
 
-    // REMEMBER TO FREE to_parent_path
+    // REMEMBER TO FREE to_parent_path TODO
     
 
     // TODO : permit the move rename only if dest start = src start = /virtual
@@ -1323,13 +1326,14 @@ static int bindfs_rename(const char *from, const char *to)
         char *to_sl = strrchr((char*)to, '/');
         char *to_parent_path;
 
+        // remove the last /part of the TO path to create TO_PARENT_PATH
         if (to_sl != NULL) {
             to_parent_path = malloc((to_sl - to) +1); 
             strncpy(to_parent_path, to, (to_sl - to));
             to_parent_path[to_sl - to] = '\0';
         }
 
-        printf("-----------------jelly mv called with parent path = %s -------------- \n", to_parent_path);
+        printf("-----------------jelly mv called with parent path = %s -------------- \n -------and from = %s ------- \n -------and to = %s ------- \n", to_parent_path, from, to);
 
         // do the select parent existing knowing that if *to_parent_path is empty we are in the root and by definition root is existing so we can rename
         if(*to_parent_path != '\0'){
@@ -1338,38 +1342,93 @@ static int bindfs_rename(const char *from, const char *to)
             sqlite3_stmt *stmt;
             int rc = sqlite3_prepare_v2(sqldb, SQL_RENAME_PCHECK, -1, &stmt, NULL);
             if (rc != SQLITE_OK) {
-                fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
+                fprintf(stderr, "PC : Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
                 sqlite3_finalize(stmt);
-                return -ENOENT;
+                return -EPERM;
             }
 
 
             rc = sqlite3_bind_text(stmt, 1, to_parent_path, -1, SQLITE_TRANSIENT );
             if (rc != SQLITE_OK) {
-                fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
+                fprintf(stderr, "PC : Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
                 sqlite3_finalize(stmt);
-                return -ENOENT;
+                return -EPERM;
             }
 
 
             // check if no result -> no parent -> this is so sad :'(
             if ((rc = sqlite3_step(stmt)) == SQLITE_DONE) {
-                return -ENOENT;
+                sqlite3_finalize(stmt);
+                return -EPERM;
             }
 
         }
 
 
+        // use process_path to know if it's a folder or file
+        char *chkfolder = process_path(from, true);
+        from += lenmrgsrcprefix; // from here we need to have from and to paths with same roots as in db
+        if(*chkfolder != '\0'){
+            free(chkfolder); // we don't need it anymore
+            // it's a file, we can rename it and that's all folks
+            
+
+            // SIMPLE RENAME IF ITS FILE  ---------------------
+
+            sqlite3_stmt *stmt;
+            int rc = sqlite3_prepare_v2(sqldb, SQL_SIMPLE_RENAME, -1, &stmt, NULL);
+            if (rc != SQLITE_OK) {
+                fprintf(stderr, "SR : Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
+                sqlite3_finalize(stmt);
+                return -EPERM;
+            }
+
+            // order of args is : 
+            // 1) to
+            // 2) from
+            rc = sqlite3_bind_text(stmt, 1, to, -1, SQLITE_TRANSIENT );
+            if (rc != SQLITE_OK) {
+                fprintf(stderr, "SR : Failed to bind text 1): %s\n", sqlite3_errmsg(sqldb));
+                sqlite3_finalize(stmt);
+                return -EPERM;
+            }
+
+            rc = sqlite3_bind_text(stmt, 2, from, -1, SQLITE_TRANSIENT );
+            if (rc != SQLITE_OK) {
+                fprintf(stderr, "SR : Failed to bind text 2): %s\n", sqlite3_errmsg(sqldb));
+                sqlite3_finalize(stmt);
+                return -EPERM;
+            }
+
+            if ( (rc = sqlite3_step(stmt)) != SQLITE_DONE) {
+                fprintf(stderr, "SR : Execution of rename failed: %s\n", sqlite3_errmsg(sqldb));
+                sqlite3_finalize(stmt);
+                return -EPERM;
+            } else {
+                printf("Renamed successfully\n");
+                sqlite3_finalize(stmt);
+                return 0;
+            }
+
+
+
+            // END: SIMPLE RENAME IF ITS FILE  ---------------------
+
+        }
+        free(chkfolder); // we don't need it anymore - 2nd one in case if not verified
+
+
+
         // MVP without predelete / overwrite TODO: with overwrite
-        // LETTTTSSSSS RENAME ---------------------
+        // DEPTH RENAME IF ITS FOLDER  ---------------------
 
 
         sqlite3_stmt *stmt;
         int rc = sqlite3_prepare_v2(sqldb, SQL_RENAME_DEPTH, -1, &stmt, NULL);
         if (rc != SQLITE_OK) {
-            fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
+            fprintf(stderr, "DR: Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
-            return -ENOENT;
+            return -EPERM;
         }
 
         // order of args is : 
@@ -1379,41 +1438,45 @@ static int bindfs_rename(const char *from, const char *to)
         // 4) from
         rc = sqlite3_bind_text(stmt, 1, to, -1, SQLITE_TRANSIENT );
         if (rc != SQLITE_OK) {
-            fprintf(stderr, "Failed to bind text 1): %s\n", sqlite3_errmsg(sqldb));
+            fprintf(stderr, "DR: Failed to bind text 1): %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
-            return -ENOENT;
+            return -EPERM;
         }
 
-        const int tolkien = strlen(to) + 7;
+        const int tolkien = strlen(to) + 6;
 
         rc = sqlite3_bind_int(stmt, 2, tolkien);
         if (rc != SQLITE_OK) {
-            fprintf(stderr, "Failed to bind int 2): %s\n", sqlite3_errmsg(sqldb));
+            fprintf(stderr, "DR: Failed to bind int 2): %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
-            return -ENOENT;
+            return -EPERM;
         }
 
         rc = sqlite3_bind_text(stmt, 3, from, -1, SQLITE_TRANSIENT );
         if (rc != SQLITE_OK) {
-            fprintf(stderr, "Failed to bind text 3): %s\n", sqlite3_errmsg(sqldb));
+            fprintf(stderr, "DR: Failed to bind text 3): %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
-            return -ENOENT;
+            return -EPERM;
         }
 
         rc = sqlite3_bind_text(stmt, 4, from, -1, SQLITE_TRANSIENT );
         if (rc != SQLITE_OK) {
-            fprintf(stderr, "Failed to bind text 4): %s\n", sqlite3_errmsg(sqldb));
+            fprintf(stderr, "DR: Failed to bind text 4): %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
-            return -ENOENT;
+            return -EPERM;
         }
 
         if ( (rc = sqlite3_step(stmt)) != SQLITE_DONE) {
-            fprintf(stderr, "Execution of rename failed: %s\n", sqlite3_errmsg(sqldb));
-            return -ENOENT;
+            fprintf(stderr, "DR: Execution of rename failed: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            return -EPERM;
         } else {
             printf("Renamed successfully\n");
+            sqlite3_finalize(stmt);
             return 0;
         }
+
+        // END: DEPTH RENAME IF ITS FOLDER  ---------------------
 
     }
 
