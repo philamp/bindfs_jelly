@@ -243,7 +243,7 @@ static char *process_path(const char *path, bool resolve_symlinks);
 /* The common parts of getattr and fgetattr. */
 static int getattr_common(const char *path, struct stat *stbuf);
 
-static int getattr_jelly(const char *procpath, struct stat *stbuf, const char* virtual_path);
+static int getattr_jelly(const char *procpath, struct stat *stbuf);
 
 uint64_t djb2_hash(const char *str);
 
@@ -419,7 +419,7 @@ static char *process_path(const char *path, bool resolve_symlinks)
 
         // 2- if then path is just "", there is no item to resolve in db (so it's a folder) 
         if (*path == '\0'){
-            path = ".";
+            //path = ".";
             return strdup(path);
         }
     
@@ -856,7 +856,7 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
     const char *mrgsrcprefix = "/virtual";
     if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0){
         printf("----jelly custom loop in getattr with path : %s\n", path);
-        res = getattr_jelly(real_path, stbuf, path);
+        res = getattr_jelly(real_path, stbuf);
     }
     else
     {
@@ -952,7 +952,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         */
 
         #ifdef HAVE_FUSE_3
-        if (filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS) != 0) {
+        if (filler(buf, ".", NULL, 0, 0) != 0) {
         #else
         if (filler(buf, ".", NULL, 0) != 0) {
         #endif
@@ -960,7 +960,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         }
 
         #ifdef HAVE_FUSE_3
-        if (filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS) != 0) {
+        if (filler(buf, "..", NULL, 0, 0) != 0) {
         #else
         if (filler(buf, "..", NULL, 0) != 0) {
         #endif
@@ -988,9 +988,9 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         */
         int res = 0;
         struct stat sta;
-        res = getattr_jelly(".", &sta, srcprefix);
+        res = getattr_jelly("", &sta);
         struct stat stb;
-        res = getattr_jelly(".", &stb, mrgsrcprefix);
+        res = getattr_jelly("", &stb);
 
         #ifdef HAVE_FUSE_3
         filler(buf, "actual", &sta, 0, FUSE_FILL_DIR_PLUS);
@@ -1035,7 +1035,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             const unsigned char *virtual = sqlite3_column_text(stmt, 1);
 
             struct stat stc;
-            res = getattr_jelly((char*)actual, &stc, path);
+            res = getattr_jelly((char*)actual, &stc);
             if(res != 0){
                 printf("File targeted by Path %s does not exist, error is: %s",actual,strerror(-res));
             }
@@ -3424,15 +3424,14 @@ int main(int argc, char *argv[])
     return bindfs_init_failed ? 1 : fuse_main_return;
 }
 
-static int getattr_jelly(const char *procpath, struct stat *stbuf, const char* virtual_path)
+static int getattr_jelly(const char *procpath, struct stat *stbuf)
 {
     //int res = 0;
     memset(stbuf, 0, sizeof(struct stat));
     // if target empty dont stat it, spoof everything it's a folder
-    if(*procpath == '\0' || *procpath == '.'){
+    if(*procpath == '\0'){
         stbuf->st_mode = S_IFDIR | 0755;
         stbuf->st_nlink = 2;
-        stbuf->st_ino = (ino_t)djb2_hash(virtual_path);
         stbuf->st_size = 4096;
         stbuf->st_uid = uid_jelly; // TODO : check uid_jelly global var
         stbuf->st_gid = gid_jelly;
@@ -3461,7 +3460,6 @@ static int getattr_jelly(const char *procpath, struct stat *stbuf, const char* v
         // *- ow
         stbuf->st_uid = uid_jelly; // TODO : check uid_jelly global var
         stbuf->st_gid = gid_jelly;
-        stbuf->st_ino = (ino_t)djb2_hash(virtual_path);
 
         return 0;
     }    
@@ -3475,7 +3473,6 @@ static int getattr_jelly(const char *procpath, struct stat *stbuf, const char* v
     // *- ow
     stbuf->st_uid = uid_jelly; // TODO : check uid_jelly global var
     stbuf->st_gid = gid_jelly;
-    stbuf->st_ino = (ino_t)djb2_hash(virtual_path);
 
     return 0;
 
