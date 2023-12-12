@@ -972,20 +972,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
     printf("Path requested in readdir handler: %s\n", path);
     if (*path == '\0' || strcmp(path, ".") == 0 || strcmp(path, "/") == 0){
-        /*
-        struct stat sta;
-        memset(&sta, 0, sizeof(sta));
-        struct stat stb;
-        memset(&stb, 0, sizeof(stb));
-        sta.st_ino = 1; // Inode number for "sources"
-        sta.st_mode = S_IFDIR | 0755; // Set as a directory with appropriate permissions
-        stb.st_ino = 2; // Inode number for "sources"
-        stb.st_mode = S_IFDIR | 0755; // Set as a directory with appropriate permissions
-        
-        // Handle the special case where path is "."
-        const char* folder1 = "actual";
-        const char* folder2 = "virtual";
-        */
+
         int res = 0;
         struct stat sta;
         res = getattr_jelly("", &sta);
@@ -1014,7 +1001,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 
         sqlite3_stmt *stmt;
-        //printf("-----before prep the query-------\n", NULL);
+
         int rc = sqlite3_prepare_v2(sqldb, SQL_READDIR, -1, &stmt, NULL);
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
@@ -1252,14 +1239,123 @@ static int bindfs_mkdir(const char *path, mode_t mode)
 
 static int bindfs_unlink(const char *path)
 {
+
+   //FD
+    static const char SQL_FILE_DELETE[] = "DELETE FROM main_mapping WHERE virtual_fullpath = depenc( ? )";
+
+
+    // should go down that route only if in virtual
+    // TODO : it's repeated in multiple places
+    static const char mrgsrcprefix[] = "/virtual";
+    static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
+
+    if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
+        path += lenmrgsrcprefix; // Skip the "/virtual" part
+
+        // ok this is a file we can remove it
+
+        sqlite3_stmt *stmtd;
+        int rc = sqlite3_prepare_v2(sqldb, SQL_FILE_DELETE, -1, &stmtd, NULL);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to prepare FD statement: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmtd);
+        }
+        rc = sqlite3_bind_text(stmtd, 1, path, -1, SQLITE_TRANSIENT );
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "FD : Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmtd);
+            return -EPERM;
+        }
+
+        // TODO: if there is in fact nothing to delete (race condition or fuse path error) it will return successfull as well
+        if ( (rc = sqlite3_step(stmtd)) != SQLITE_DONE) {
+            fprintf(stderr, "FD : Execution of file deletion failed: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmtd);
+            return -EPERM;
+        } else {
+            printf("FD: Folder deleted successfully\n");
+            sqlite3_finalize(stmtd);
+            return 0;
+        }
+
+
+    }
+
+
     return delete_file(path, &unlink);
 }
 
 static int bindfs_rmdir(const char *path)
 {
-    return delete_file(path, &rmdir);
+    
+    //CD
+    static const char SQL_CHECKDIR[] = "SELECT virtual_fullpath FROM main_mapping WHERE virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\');";
 
-    // implement rmdir thru db
+    //DD
+    static const char SQL_DIR_DELETE[] = "DELETE FROM main_mapping WHERE virtual_fullpath = depenc( ? )";
+
+
+    // should go down that route only if in virtual
+    // TODO : it's repeated in multiple places
+    static const char mrgsrcprefix[] = "/virtual";
+    static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
+
+    if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
+        path += lenmrgsrcprefix; // Skip the "/virtual" part
+
+
+        // check if folder is empty = run sql and return -EPERM if first rc != done
+
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(sqldb, SQL_CHECKDIR, -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "CD: Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+        }
+
+        rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT );
+        rc = sqlite3_bind_text(stmt, 2, path, -1, SQLITE_TRANSIENT );
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "CD: Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+        }
+
+        if ((rc = sqlite3_step(stmt)) != SQLITE_DONE) {
+            sqlite3_finalize(stmt);
+            return -EPERM;
+        }
+
+        // ok no children we can remove this folder
+        // TODO: if there is in fact nothing to delete (race condition or fuse path error) it will return successfull as well
+    
+        sqlite3_stmt *stmtd;
+        rc = sqlite3_prepare_v2(sqldb, SQL_DIR_DELETE, -1, &stmtd, NULL);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to prepare DD statement: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmtd);
+        }
+        rc = sqlite3_bind_text(stmtd, 1, path, -1, SQLITE_TRANSIENT );
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "DD : Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmtd);
+            return -EPERM;
+        }
+
+        if ( (rc = sqlite3_step(stmtd)) != SQLITE_DONE) {
+            fprintf(stderr, "DD : Execution of folder deletion failed: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmtd);
+            return -EPERM;
+        } else {
+            printf("DD: Folder deleted successfully\n");
+            sqlite3_finalize(stmtd);
+            return 0;
+        }
+
+
+    }
+
+
+    return delete_file(path, &rmdir);
     
 }
 
@@ -1324,7 +1420,7 @@ static int bindfs_rename(const char *from, const char *to)
 
     // TODO: test what happens if rename to /abcd/ instead of /abcd (does fuse already remove the last useless slash ?)
     if (strncmp(to, mrgsrcprefix, lenmrgsrcprefix) == 0) {
-        to += lenmrgsrcprefix; // Skip the "/actual" part
+        to += lenmrgsrcprefix; // Skip the "/virtual" part
         printf("-----------------jelly mv called-------------- \n", NULL);
         char *to_sl = strrchr((char*)to, '/');
         char *to_parent_path;

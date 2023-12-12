@@ -4,7 +4,7 @@ import sqlite3
 # Path to your SQLite database file #TODO: to change
 db_path = '/mounts/.bindfs_jelly.db'
 
-print("coucou")
+print("Database creation and initialisation")
 # UPDATE new_virtual_mappings SET (virtual_fullpath = '
 # WHERE virtual_fullpath COLLATE CUSTOM_COLLATE!! BETWEEN 'path/' AND 'path0';
 
