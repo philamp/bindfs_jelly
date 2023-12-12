@@ -3,6 +3,7 @@
 ### WARNING
 This fork has some former functionnalities butchered for the moment:
 * getxattr is not implemented anymore and this FS will act as if it doesn't know getxattr
+* virtual folders are all having the 755 permission by default, chmod has no power here
 
 ## Overview ##
 
