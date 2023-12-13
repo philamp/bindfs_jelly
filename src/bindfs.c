@@ -1421,7 +1421,7 @@ static int bindfs_rename(const char *from, const char *to)
     static const char SQL_RENAME_PCHECK[] = "SELECT virtual_fullpath FROM main_mapping WHERE virtual_fullpath = depenc(?) AND actual_fullpath IS NULL"; // depdec not needed in the select here
     // RD
     static const char SQL_RENAME_DEPTH[] = "UPDATE main_mapping SET virtual_fullpath = depenc( ? || SUBSTR(virtual_fullpath, ?)) WHERE virtual_fullpath BETWEEN depenc( ? ) AND depenc( ? || '/\\') collate scdepth";
-    // DR
+    // SR
     static const char SQL_SIMPLE_RENAME[] = "UPDATE main_mapping SET virtual_fullpath = depenc( ? ) WHERE virtual_fullpath = depenc( ? )";
 
 
@@ -1490,7 +1490,7 @@ static int bindfs_rename(const char *from, const char *to)
         }
         free(to_parent_path);
 
-
+        
         // use process_path to know if it's a folder or file
         char *chkfolder = process_path(from, true);
         from += lenmrgsrcprefix; // from here we need to have 'from' and 'to' paths with same roots as in database
@@ -1542,8 +1542,9 @@ static int bindfs_rename(const char *from, const char *to)
 
         }
         free(chkfolder); // we don't need it anymore - 2nd one in case if not verified
+        
 
-
+        //from += lenmrgsrcprefix; // from here we need to have 'from' and 'to' paths with same roots as in database
 
         // MVP without predelete / overwrite TODO: with overwrite
         // DEPTH RENAME IF ITS FOLDER  ---------------------
