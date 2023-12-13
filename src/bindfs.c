@@ -99,6 +99,12 @@ sqlite3 *sqldb = NULL;
 uid_t uid_jelly = 33;
 gid_t gid_jelly = 0;
 
+static const char srcprefix[] = "/actual";
+static const int lensrcprefix = sizeof(srcprefix)-1;
+
+static const char mrgsrcprefix[] = "/virtual";
+static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
+
 /* Socket file support for MacOS and FreeBSD */
 #if defined(__APPLE__) || defined(__FreeBSD__)
 #include <sys/socket.h>
@@ -402,13 +408,6 @@ static char *process_path(const char *path, bool resolve_symlinks)
         errno = EINVAL;
         return NULL;
     }
-
-    // TODO : it's repeated in function readdir
-    static const char srcprefix[] = "/actual";
-    static const int lensrcprefix = sizeof(srcprefix)-1;
-
-    static const char mrgsrcprefix[] = "/virtual";
-    static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
 
 
     if (strncmp(path, srcprefix, lensrcprefix) == 0) {
@@ -933,13 +932,6 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     static const char SQL_READDIR[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\');";
     
     int result = 0;
-
-    // TODO : it's repeated in function process_path
-    static const char mrgsrcprefix[] = "/virtual";
-    static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
-
-    static const char srcprefix[] = "/actual";
-    static const int lensrcprefix = sizeof(srcprefix)-1;
     
 
 
@@ -1213,6 +1205,47 @@ static int bindfs_mknod(const char *path, mode_t mode, dev_t rdev)
 
 static int bindfs_mkdir(const char *path, mode_t mode)
 {
+
+    // MK
+    static const char SQL_MKDIR[] = "INSERT INTO main_mapping (virtual_fullpath) VALUES (depenc( ? ))";
+
+    if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
+        path += lenmrgsrcprefix; // Skip the "/virtual" part
+
+        // dont need to check if already exists as SQL will throw an error if so anyway
+
+
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(sqldb, SQL_MKDIR, -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "MK : Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            return -EPERM;
+        }
+
+
+        rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT );
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "MK : Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            return -EPERM;
+        }
+
+
+        if ( (rc = sqlite3_step(stmt)) != SQLITE_DONE) {
+            fprintf(stderr, "MK: Execution of mkdir failed: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            return -EPERM;
+        } else {
+            printf("Mkdir successfully\n");
+            sqlite3_finalize(stmt);
+            return 0;
+        }
+
+
+    }
+
+
     int res;
     struct fuse_context *fc;
     char *real_path;
@@ -1245,10 +1278,6 @@ static int bindfs_unlink(const char *path)
 
 
     // should go down that route only if in virtual
-    // TODO : it's repeated in multiple places
-    static const char mrgsrcprefix[] = "/virtual";
-    static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
-
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         path += lenmrgsrcprefix; // Skip the "/virtual" part
 
@@ -1296,10 +1325,6 @@ static int bindfs_rmdir(const char *path)
 
 
     // should go down that route only if in virtual
-    // TODO : it's repeated in multiple places
-    static const char mrgsrcprefix[] = "/virtual";
-    static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
-
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         path += lenmrgsrcprefix; // Skip the "/virtual" part
 
@@ -1392,13 +1417,6 @@ static int bindfs_rename(const char *from, const char *to)
 #endif
 {
 
-    // TODO : it's repeated in function readdir :(
-    static const char srcprefix[] = "/actual";
-    static const int lensrcprefix = sizeof(srcprefix)-1;
-
-    static const char mrgsrcprefix[] = "/virtual";
-    static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
-
     // PC
     static const char SQL_RENAME_PCHECK[] = "SELECT virtual_fullpath FROM main_mapping WHERE virtual_fullpath = depenc(?) AND actual_fullpath IS NULL"; // depdec not needed in the select here
     // RD
@@ -1411,7 +1429,7 @@ static int bindfs_rename(const char *from, const char *to)
     char *real_from, *real_to;
 
     
-    
+    printf("rename de %s en %s", from, to);
 
     // REMEMBER TO FREE to_parent_path TODO
     
@@ -1541,7 +1559,7 @@ static int bindfs_rename(const char *from, const char *to)
 
         // order of args is : 
         // 1) to
-        // 2) strlen(to) + 1 + 6 
+        // 2) strlen(from) + 1 + 6 
         // 3) from
         // 4) from
         rc = sqlite3_bind_text(stmt, 1, to, -1, SQLITE_TRANSIENT );
@@ -1551,7 +1569,7 @@ static int bindfs_rename(const char *from, const char *to)
             return -EPERM;
         }
 
-        const int tolkien = strlen(to) + 6;
+        const int tolkien = strlen(from) + 6;
 
         rc = sqlite3_bind_int(stmt, 2, tolkien);
         if (rc != SQLITE_OK) {
