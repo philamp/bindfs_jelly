@@ -4,7 +4,8 @@
 This fork has some former functionnalities butchered for the moment:
 * getxattr is not implemented anymore and this FS will act as if it doesn't know getxattr-
 * virtual folders are all having the 755 permission by default, chmod has no power here.
-* don't use with backup software or rsync, as struct inode is now set as ignored by FUSE and thus is not reboot consistent.
+* don't use with backup software or rsync, as struct inode is now set as ignored by FUSE and thus inode values are not reboot consistent.
+* uniqueness applies to folder and file together, so you can't have a file and folder with same name at the same place.
 
 ## Overview ##
 
