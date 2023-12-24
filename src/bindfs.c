@@ -96,7 +96,7 @@
 // jelly fork global variables
 sqlite3 *sqldb = NULL;
 
-uid_t uid_jelly = 33;
+uid_t uid_jelly = 0;
 gid_t gid_jelly = 0;
 
 static const char srcprefix[] = "/actual";
@@ -1405,7 +1405,7 @@ static int bindfs_rename(const char *from, const char *to)
     
     printf("rename de %s en %s", from, to);
 
-    if (strncmp(to, mrgsrcprefix, lenmrgsrcprefix) == 0) {
+    if (strncmp(to, mrgsrcprefix, lenmrgsrcprefix) == 0 && strncmp(from, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         to += lenmrgsrcprefix; // Skip the "/virtual" part
         from += lenmrgsrcprefix;
         printf("-----------------jelly mv called-------------- \n", NULL);
@@ -1775,6 +1775,78 @@ static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *f
     int fd;
     struct fuse_context *fc;
     char *real_path;
+
+    static const char fallbackd[] = "fallback";
+
+    // if inside virtual
+    // 1 - create the real file in /fallback 
+    // (create fallback dir if not existing)
+    // (increment file if existing)
+    // 2 - insert the path
+    // INSERT INTO main_mapping (virtual_fullpath, actual_fullpath) VALUES (path, /mounts/fallback/name-incr)
+    // if fail -> return -EEXIST and delete real file
+
+    if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0){
+        path += lenmrgsrcprefix;
+
+        struct stat st;
+
+        // Check if the folder already exists
+        if (stat(fallbackd, &st) == -1) {
+            // Folder does not exist, create it
+            if (mkdir(fallbackd, 0755) == -1) {
+                perror("Error creating directory");
+                return 1;
+            } else {
+                printf("Directory created\n");
+            }
+        } else {
+            printf("Directory already exists\n");
+        }
+
+        // input is /a/file.srt
+        // outcome must be fallback/file.srt.key
+
+        const char *fn = strrchr((char*)path, '/');
+        int i = 0;
+        int fplen = strlen(fn) + 9 + 5 + 1;
+        char *fp = malloc(fplen);
+
+        while (i < 999) { // SOME_LIMIT is a maximum number of attempts
+            sprintf(fp, "/fallback%s.%d", fn, i);
+            if (stat(fp, &st) != 0) {
+                break;
+            }
+            i++;
+        }
+
+        mode |= S_IFREG; /* tell permchain_apply this is a regular file */
+        mode = permchain_apply(settings.create_permchain, mode);
+
+        int flags = fi->flags;
+#ifdef __linux__
+    if (!settings.forward_odirect) {
+        flags &= ~O_DIRECT;
+    }
+#endif
+        fd = open(fp, flags, mode & 0777);
+        if (fd == -1) {
+            free(fp);
+            return -errno;
+        }
+
+
+
+        fc = fuse_get_context();
+        chown_new_file(real_path, fc, &chown);
+        fi->fh = fd;
+
+        free(fp);
+        return(0);
+
+
+    }
+    
 
     real_path = process_path(path, true);
     if (real_path == NULL)
