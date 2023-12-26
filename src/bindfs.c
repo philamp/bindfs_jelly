@@ -96,7 +96,8 @@
 // jelly fork global variables
 sqlite3 *sqldb = NULL;
 
-uid_t uid_jelly = 0;
+// TODO: change for somthing universal
+uid_t uid_jelly = 33;
 gid_t gid_jelly = 0;
 
 static const char srcprefix[] = "/actual";
@@ -104,6 +105,9 @@ static const int lensrcprefix = sizeof(srcprefix)-1;
 
 static const char mrgsrcprefix[] = "/virtual";
 static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
+
+static const char fallbackd[] = "fallback";
+static const int lenfallbackd = sizeof(mrgsrcprefix)-1;
 
 /* Socket file support for MacOS and FreeBSD */
 #if defined(__APPLE__) || defined(__FreeBSD__)
@@ -442,10 +446,7 @@ static char *process_path(const char *path, bool resolve_symlinks)
         const unsigned char* target = NULL;
         if ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
             target = sqlite3_column_text(stmt, 0);
-            //printf("path_finder:%s\n",(char*)target);
-            //const unsigned char *source = sqlite3_column_text(stmt, 1);
         }else if (rc == SQLITE_DONE) {
-            //path = ".";return strdup(path);
             sqlite3_finalize(stmt);
             errno = ENOENT;
             return NULL;
@@ -839,13 +840,10 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
 #endif
 {
 
-    printf("Path requested in getattr handler: %s\n", path);
     int res;
     char *real_path;
 
     real_path = process_path(path, true);
-
-    printf("Path returned after process_path in getattr handler: %s\n", real_path);
     
     if (real_path == NULL)
         return -errno;
@@ -854,7 +852,6 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
     // jelly custom
     const char *mrgsrcprefix = "/virtual";
     if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0){
-        printf("----jelly custom loop in getattr with path : %s\n", path);
         res = getattr_jelly(real_path, stbuf);
     }
     else
@@ -962,7 +959,6 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     }
 
 
-    printf("Path requested in readdir handler: %s\n", path);
     if (*path == '\0' || strcmp(path, ".") == 0 || strcmp(path, "/") == 0){
 
         int res = 0;
@@ -986,11 +982,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         int res = 0;
 
-
-        //printf("-----before string the query-------\n", NULL);
-        
-        path += lenmrgsrcprefix; // Skip the "/merged_sources" part -> temp, for the moment it equals srcprefix behavior
-
+        path += lenmrgsrcprefix; 
 
         sqlite3_stmt *stmt;
 
@@ -1006,9 +998,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
         }
-        //printf("-----before stepping the query-------\n", NULL);
-        //int res = 0;
-        //struct stat stb;
+
         while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
             const unsigned char *actual = sqlite3_column_text(stmt, 0);
             const unsigned char *virtual = sqlite3_column_text(stmt, 1);
@@ -1018,18 +1008,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             if(res != 0){
                 printf("File targeted by Path %s does not exist, error is: %s",actual,strerror(-res));
             }
-            //memset(&stc, 0, sizeof(stc));
-            //stc.st_ino = 3; // Inode number for "sources"
 
-            //stb.st_ino = 1; // Inode number for "sources"
-            //stb.st_mode = (*target == '\0') ? S_IFDIR | 0755 : S_IFREG | 0644; // Set as a directory with appropriate permissions
-            
-            //res = getattr_jelly((char*)target, &stb);
-            //res = 0;
-
-            //if(res != 0){return -errno;}
-
-            //char* ssrc = strdup((char*)virtual);
             char *lastPart = strrchr((char*)virtual, '/') +1;
 
             #ifdef HAVE_FUSE_3
@@ -1043,13 +1022,10 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 
             // TODO ERROR MGMT
-            printf("virtual:%s\n",(char*)virtual);
-            printf("actual:%s\n",(char*)actual);
 
         }
 
         sqlite3_finalize(stmt);
-        //printf("---path requested looks into the sqlite db---\n", NULL);
         return 0;
     }
 
@@ -1154,6 +1130,8 @@ static int bindfs_mknod(const char *path, mode_t mode, dev_t rdev)
     int res;
     struct fuse_context *fc;
     char *real_path;
+
+    printf("------MKNOD-CALLED----");
 
     real_path = process_path(path, true);
     if (real_path == NULL)
@@ -1296,20 +1274,27 @@ static int bindfs_unlink(const char *path)
             return -EPERM;
         }
 
-        // TODO: if there is in fact nothing to delete (race condition or fuse path error) it will return successfull as well
         if ( (rc = sqlite3_step(stmtd)) != SQLITE_DONE) {
             fprintf(stderr, "FD : Execution of file deletion failed: %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmtd);
             return -EPERM;
         } else {
             printf("FD: Folder deleted successfully\n");
+            
+            /*
+            const unsigned char* deltarget = sqlite3_column_text(stmtd, 0);
+
+            // if actual path starts with fallback
+            if (strncmp(deltarget, fallbackd, lenfallbackd) == 0) {
+                return delete_file(deltarget, &unlink);
+            }
+            */
+
             sqlite3_finalize(stmtd);
             return 0;
         }
 
-
     }
-
 
     return delete_file(path, &unlink);
 }
@@ -1408,7 +1393,6 @@ static int bindfs_rename(const char *from, const char *to)
     if (strncmp(to, mrgsrcprefix, lenmrgsrcprefix) == 0 && strncmp(from, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         to += lenmrgsrcprefix; // Skip the "/virtual" part
         from += lenmrgsrcprefix;
-        printf("-----------------jelly mv called-------------- \n", NULL);
         char *to_sl = strrchr((char*)to, '/');
         char *to_parent_path;
 
@@ -1425,11 +1409,6 @@ static int bindfs_rename(const char *from, const char *to)
         }
 
         const int root = (*to_parent_path == '\0') ? 1 : 0;
-
-        printf("-----------------jelly mv called with parent path = %s -------------- \n -------and from = %s ------- \n -------and to = %s ------- \n", to_parent_path, from, to);
-
-
-
 
         sqlite3_stmt *stmt;
         int rc = sqlite3_prepare_v2(sqldb, SQL_RENAME_DEPTH, -1, &stmt, NULL);
@@ -1776,7 +1755,11 @@ static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *f
     struct fuse_context *fc;
     char *real_path;
 
+    static const char SQL_INSERT[] = "INSERT INTO main_mapping (virtual_fullpath, actual_fullpath) VALUES (depenc(?), ?)";
+
     static const char fallbackd[] = "fallback";
+
+    printf("---CREATE CALLED----");
 
     // if inside virtual
     // 1 - create the real file in /fallback 
@@ -1804,31 +1787,69 @@ static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *f
             printf("Directory already exists\n");
         }
 
-        // input is /a/file.srt
-        // outcome must be fallback/file.srt.key
+        // input is /a/file.ext
+        // outcome must be fallback/file.ext.i
 
         const char *fn = strrchr((char*)path, '/');
         int i = 0;
-        int fplen = strlen(fn) + 9 + 5 + 1;
+        int fplen = strlen(fn) + 16 + 5 + 1;
         char *fp = malloc(fplen);
 
         while (i < 999) { // SOME_LIMIT is a maximum number of attempts
-            sprintf(fp, "/fallback%s.%d", fn, i);
+            sprintf(fp, "%s%s.%d", fallbackd, fn, i);
             if (stat(fp, &st) != 0) {
                 break;
             }
             i++;
         }
 
-        mode |= S_IFREG; /* tell permchain_apply this is a regular file */
-        mode = permchain_apply(settings.create_permchain, mode);
+        
+
+        //SQL
+        sqlite3_stmt *stmt;
+        int rc = sqlite3_prepare_v2(sqldb, SQL_INSERT, -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "NEWFILE : Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            return -EPERM;
+        }
+
+        
+
+        rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT );
+        rc = sqlite3_bind_text(stmt, 2, fp, -1, SQLITE_TRANSIENT );
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "NEWFILE : Failed to bind text 1 or 2: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            return -EPERM;
+        }
+
+
+        if ( (rc = sqlite3_step(stmt)) != SQLITE_DONE) {
+            fprintf(stderr, "NEWFILE: Execution of new file failed: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            return -EPERM;
+        } else {
+            printf("NEW FILE successfully created\n");
+            sqlite3_finalize(stmt);
+        }
+
+        // end of SQL insert
+
+
+        //mode |= S_IFREG; /* tell permchain_apply this is a regular file */
+        //mode = permchain_apply(settings.create_permchain, mode);
 
         int flags = fi->flags;
+
 #ifdef __linux__
-    if (!settings.forward_odirect) {
-        flags &= ~O_DIRECT;
-    }
+        if (!settings.forward_odirect) {
+            flags &= ~O_DIRECT;
+        }
 #endif
+
+        //flags = O_CREAT | O_WRONLY;
+        
         fd = open(fp, flags, mode & 0777);
         if (fd == -1) {
             free(fp);
@@ -1838,7 +1859,7 @@ static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *f
 
 
         fc = fuse_get_context();
-        chown_new_file(real_path, fc, &chown);
+        chown_new_file(fp, fc, &chown);
         fi->fh = fd;
 
         free(fp);
