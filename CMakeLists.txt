@@ -70,6 +70,7 @@ set(BINDFS_SOURCES
         src/bindfs.c
         src/debug.c
         src/debug.h
+        src/bindfs_x.cpp
         src/misc.c
         src/misc.h
         src/permchain.c

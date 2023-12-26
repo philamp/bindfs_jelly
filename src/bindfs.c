@@ -100,6 +100,8 @@ sqlite3 *sqldb = NULL;
 uid_t uid_jelly = 33;
 gid_t gid_jelly = 0;
 
+#include "bindfs.h"
+/*
 static const char srcprefix[] = "/actual";
 static const int lensrcprefix = sizeof(srcprefix)-1;
 
@@ -108,6 +110,7 @@ static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
 
 static const char fallbackd[] = "fallback";
 static const int lenfallbackd = sizeof(mrgsrcprefix)-1;
+*/
 
 /* Socket file support for MacOS and FreeBSD */
 #if defined(__APPLE__) || defined(__FreeBSD__)
@@ -261,7 +264,7 @@ uint64_t djb2_hash(const char *str);
 static int chown_new_file(const char *path, struct fuse_context *fc, int (*chown_func)(const char*, uid_t, gid_t));
 
 /* Unified implementation of unlink and rmdir. */
-static int delete_file(const char *path, int (*target_delete_func)(const char *));
+//static int delete_file(const char *path, int (*target_delete_func)(const char *));
 
 /* Apply offsets with overflow checking. */
 static bool apply_uid_offset(uid_t *uid);
@@ -299,7 +302,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 #endif
 static int bindfs_mknod(const char *path, mode_t mode, dev_t rdev);
 static int bindfs_mkdir(const char *path, mode_t mode);
-static int bindfs_unlink(const char *path);
+//export int bindfs_unlink(const char *path);
 static int bindfs_rmdir(const char *path);
 static int bindfs_symlink(const char *from, const char *to);
 #ifdef HAVE_FUSE_3
@@ -643,7 +646,7 @@ static int chown_new_file(const char *path, struct fuse_context *fc, int (*chown
     return 0;
 }
 
-static int delete_file(const char *path, int (*target_delete_func)(const char *)) {
+int delete_file(const char *path, int (*target_delete_func)(const char *)) {
     int res;
     char *real_path;
     struct stat st;
@@ -1248,56 +1251,7 @@ static int bindfs_mkdir(const char *path, mode_t mode)
     return res;
 }
 
-static int bindfs_unlink(const char *path)
-{
-
-   //FD
-    static const char SQL_FILE_DELETE[] = "DELETE FROM main_mapping WHERE virtual_fullpath = depenc( ? )";
-
-
-    // should go down that route only if in virtual
-    if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
-        path += lenmrgsrcprefix; // Skip the "/virtual" part
-
-        // ok this is a file we can remove it
-
-        sqlite3_stmt *stmtd;
-        int rc = sqlite3_prepare_v2(sqldb, SQL_FILE_DELETE, -1, &stmtd, NULL);
-        if (rc != SQLITE_OK) {
-            fprintf(stderr, "Failed to prepare FD statement: %s\n", sqlite3_errmsg(sqldb));
-            sqlite3_finalize(stmtd);
-        }
-        rc = sqlite3_bind_text(stmtd, 1, path, -1, SQLITE_TRANSIENT );
-        if (rc != SQLITE_OK) {
-            fprintf(stderr, "FD : Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
-            sqlite3_finalize(stmtd);
-            return -EPERM;
-        }
-
-        if ( (rc = sqlite3_step(stmtd)) != SQLITE_DONE) {
-            fprintf(stderr, "FD : Execution of file deletion failed: %s\n", sqlite3_errmsg(sqldb));
-            sqlite3_finalize(stmtd);
-            return -EPERM;
-        } else {
-            printf("FD: Folder deleted successfully\n");
-            
-            /*
-            const unsigned char* deltarget = sqlite3_column_text(stmtd, 0);
-
-            // if actual path starts with fallback
-            if (strncmp(deltarget, fallbackd, lenfallbackd) == 0) {
-                return delete_file(deltarget, &unlink);
-            }
-            */
-
-            sqlite3_finalize(stmtd);
-            return 0;
-        }
-
-    }
-
-    return delete_file(path, &unlink);
-}
+//static int bindfs_unlink(const char *path);
 
 static int bindfs_rmdir(const char *path)
 {
