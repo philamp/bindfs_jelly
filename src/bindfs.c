@@ -964,18 +964,18 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
     if (*path == '\0' || strcmp(path, ".") == 0 || strcmp(path, "/") == 0){
 
-        int res = 0;
         struct stat sta;
-        res = getattr_jelly("", &sta);
-        struct stat stb;
-        res = getattr_jelly("", &stb);
+        
+        int res = getattr_jelly("", &sta);
+
+        if(res != 0){return res;}
 
         #ifdef HAVE_FUSE_3
         filler(buf, "actual", &sta, 0, FUSE_FILL_DIR_PLUS);
-        filler(buf, "virtual", &stb, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, "virtual", &sta, 0, FUSE_FILL_DIR_PLUS);
         #else
         filler(buf, "actual", &sta, 0);
-        filler(buf, "virtual", &stb, 0);
+        filler(buf, "virtual", &sta, 0);
         #endif
         return 0;
     }
@@ -2105,6 +2105,7 @@ static int bindfs_setxattr(const char *path, const char *name, const char *value
     return 0;
 }
 
+/*
 #ifdef __APPLE__
 static int bindfs_getxattr(const char *path, const char *name, char *value,
                            size_t size, uint32_t position)
@@ -2141,6 +2142,7 @@ static int bindfs_getxattr(const char *path, const char *name, char *value,
         return -errno;
     return res;
 }
+*/
 
 static int bindfs_listxattr(const char *path, char* list, size_t size)
 {

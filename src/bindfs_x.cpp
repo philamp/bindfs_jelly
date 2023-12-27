@@ -7,6 +7,12 @@
 
 class stating{
     public:
+
+        stating(const stating&) = delete; // to avoid :  stating sting2 = sting1
+
+        void operator=(const stating&) = delete; // sting2 = sting1
+
+
         sqlite3_stmt *stmt;
         stating(const char* query){
             int rc = sqlite3_prepare_v2(sqldb, query, -1, &stmt, NULL);
@@ -15,7 +21,7 @@ class stating{
             }
 
         }
-
+        
         int bind(int pos, const char* var){
             int rc = sqlite3_bind_text(stmt, pos, var, -1, SQLITE_TRANSIENT );
             if (rc != SQLITE_OK) {
@@ -41,6 +47,11 @@ class transact{
     bool need_rollback = false;
 
     public:
+
+        transact(const transact&) = delete; 
+
+        void operator=(const transact&) = delete; 
+
         transact(){
             int rc;
             stating sting_b("BEGIN");
@@ -73,6 +84,7 @@ class transact{
                 need_rollback = false;
             }
         }
+
 };
 
 

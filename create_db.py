@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS main_mapping (
 );
 '''
 
+create_index = '''
+CREATE INDEX rename_depth ON main_mapping (virtual_fullpath COLLATE SCDEPTH);
+'''
+
 insert_data = '''
 INSERT INTO main_mapping (virtual_fullpath, actual_fullpath) VALUES 
 (depenc('/a/b/d.mkv'), "/mounts/rar2fs_remote_realdebrid/movies/Walk.The.Line.2005.MULTi.1080p.BluRay.x264-NOEX/Walk.The.Line.2005.MULTi.1080p.BluRay.x264-NOEX.mkv")
@@ -46,6 +50,7 @@ def create_table():
         
         # Execute the SQL command
         cursor.execute(create_table_sql)
+        cursor.execute(create_index)
         cursor.execute(insert_data)
         
         # Commit the changes and close the connection
