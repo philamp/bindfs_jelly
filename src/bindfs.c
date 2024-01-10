@@ -411,11 +411,66 @@ static char *process_path(const char *path, bool resolve_symlinks)
 {
     static const char SQL_PROCESS_PATH[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath = depenc(?)";
 
+    static const char SQL_PROCESS_CACHE_ITEM[] = "SELECT IFNULL(depdec(jginfo_rclone_cache_item),'') FROM main_mapping WHERE jginfo_rclone_cache_item = depenc(?)";
+
     if (path == NULL) { /* possible? */
         errno = EINVAL;
         return NULL;
     }
 
+
+    if (strncmp(path, cache_check, lencache_check) == 0) {
+        path += lencache_check; // Skip the "/cache_check" part
+
+    
+        struct stat st;
+
+        //check if path exists as an actual folder : if not check in db, else continue
+
+        char* filepath = sprintf_new("/mounts%s", path);
+
+        if(stat(filepath, &st) == -1){  
+
+            sqlite3_stmt *stmt;
+            
+            int rc = sqlite3_prepare_v2(sqldb, SQL_PROCESS_CACHE_ITEM, -1, &stmt, NULL);
+            if (rc != SQLITE_OK) {
+                fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
+                sqlite3_finalize(stmt);
+                free(filepath);
+                errno = ENOENT;
+                return NULL;
+            }
+
+            rc = sqlite3_bind_text(stmt, 1, filepath, -1, SQLITE_TRANSIENT );
+            if (rc != SQLITE_OK) {
+                fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
+                sqlite3_finalize(stmt);
+                free(filepath);
+                errno = ENOENT;
+                return NULL;
+            }
+
+            if ((rc = sqlite3_step(stmt)) != SQLITE_ROW) {
+                // file does not exists:
+                sqlite3_finalize(stmt);
+                free(filepath);
+                errno = ENOENT;
+                return NULL;
+            }
+            sqlite3_finalize(stmt);
+            
+        }
+
+        if (*path == '\0'){
+            path = ".";
+            free(filepath);
+            return strdup(path);
+        }
+
+        return filepath;
+        
+    }
 
     if (strncmp(path, srcprefix, lensrcprefix) == 0) {
         path += lensrcprefix; // Skip the "/actual" part
@@ -853,10 +908,14 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
     
 
     // jelly custom
-    const char *mrgsrcprefix = "/virtual";
-    if (strncmp(path, mrgsrcprefix, strlen(mrgsrcprefix)) == 0){
+    // const char *mrgsrcprefix = "/virtual";
+    if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0){
         res = getattr_jelly(real_path, stbuf);
     }
+    /* else if (strncmp(path, cache_check, lencache_check) == 0){
+        res = getattr_jelly(real_path, stbuf);
+    }
+    */
     else
     {
         if (lstat(real_path, stbuf) == -1) {
@@ -929,14 +988,16 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 #endif
 {
     // The SQL query with placeholders
-    static const char SQL_READDIR[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\');";
+    static const char SQL_READDIR[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\')";
     
+    static const char SQL_READ_CACHE_CHECK_DIR[] = "SELECT DISTINCT depdec(jginfo_rclone_cache_item) FROM main_mapping WHERE jginfo_rclone_cache_item collate sclist BETWEEN depenc(? || '//') AND depenc(? || '/\\')";
+
     int result = 0;
     
 
 
-    //filler . and .. when path is everything else but /actual*
-    if (!strncmp(path, srcprefix, lensrcprefix) == 0) {
+    //filler . and .. when path is everything else but /actual* or /cache_check*
+    if (!strncmp(path, srcprefix, lensrcprefix) == 0 && !strncmp(path, cache_check, lencache_check) == 0) {
         
         /*int res = 0;
         struct stat stu;
@@ -973,9 +1034,11 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         #ifdef HAVE_FUSE_3
         filler(buf, "actual", &sta, 0, FUSE_FILL_DIR_PLUS);
         filler(buf, "virtual", &sta, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, "cache_check", &sta, 0, FUSE_FILL_DIR_PLUS);
         #else
         filler(buf, "actual", &sta, 0);
         filler(buf, "virtual", &sta, 0);
+        filler(buf, "cache_check", &sta, 0);
         #endif
         return 0;
     }
@@ -993,6 +1056,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
+            return -EPERM;
         }
 
         rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT );
@@ -1000,6 +1064,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
+            return -EPERM;
         }
 
         while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
@@ -1042,6 +1107,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     if (real_path == NULL) {
         return -errno;
     }
+
 
     DIR *dp = opendir(real_path);
     if (dp == NULL) {
@@ -1108,17 +1174,80 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         // consider it an error if it does. It is undocumented whether it sets
         // errno in that case, so we zero it first and set it ourself if it
         // doesn't.
-        #ifdef HAVE_FUSE_3
-        // TODO: FUSE_FILL_DIR_PLUS doesn't work with offset==0: https://github.com/libfuse/libfuse/issues/583
-        //       Work around this by implementing the offset!=1 mode. Be careful - it's quite error-prone!
-        if (filler(buf, de->d_name, &st, 0, FUSE_FILL_DIR_PLUS) != 0) {
-        #else
-        if (filler(buf, de->d_name, &st, 0) != 0) {
-        #endif
-            result = errno != 0 ? -errno : -EIO;
-            break;
+        if (strncmp(path, cache_check, lencache_check) != 0 || (st.st_mode & S_IFDIR) == S_IFDIR){
+            #ifdef HAVE_FUSE_3
+            // TODO: FUSE_FILL_DIR_PLUS doesn't work with offset==0: https://github.com/libfuse/libfuse/issues/583
+            //       Work around this by implementing the offset!=1 mode. Be careful - it's quite error-prone!
+            if (filler(buf, de->d_name, &st, 0, FUSE_FILL_DIR_PLUS) != 0) {
+            #else
+            if (filler(buf, de->d_name, &st, 0) != 0) {
+            #endif
+                result = errno != 0 ? -errno : -EIO;
+                break;
+            }
         }
     }
+
+    
+    if (strncmp(path, cache_check, lencache_check) == 0){
+        // fill with the rest of dir with cache file items
+        int res = 0;
+
+        // start path after cache_check
+        path += lencache_check;
+
+        // add working dir at start
+        char* dirpath = sprintf_new("/mounts%s", path);
+ 
+        sqlite3_stmt *stmt;
+
+        int rc = sqlite3_prepare_v2(sqldb, SQL_READ_CACHE_CHECK_DIR, -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            free(dirpath);
+            return -EPERM;
+        }
+
+        rc = sqlite3_bind_text(stmt, 1, dirpath, -1, SQLITE_TRANSIENT );
+        rc = sqlite3_bind_text(stmt, 2, dirpath, -1, SQLITE_TRANSIENT );
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
+            sqlite3_finalize(stmt);
+            free(dirpath);
+            return -EPERM;
+        }
+
+        while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+            const unsigned char *virtual = sqlite3_column_text(stmt, 0);
+
+            struct stat stc;
+            res = getattr_jelly((char*)virtual, &stc);
+            if(res != 0){
+                printf("File targeted by Path %s does not exist, error is: %s",virtual,strerror(-res));
+            }
+
+            char *lastPart = strrchr((char*)virtual, '/') +1;
+
+            #ifdef HAVE_FUSE_3
+            if (filler(buf, (char*)lastPart, &stc, 0, FUSE_FILL_DIR_PLUS) != 0) {
+            #else
+            if (filler(buf, (char*)lastPart, &stc, 0) != 0) {
+            #endif
+            result = errno != 0 ? -errno : -EIO;
+            break;
+            }
+
+
+        }
+
+        sqlite3_finalize(stmt);
+        free(dirpath);
+        // return 0;
+
+        // TODOPHIL : /mounts/ should be discovered (=workingdir)
+    }
+    
 
     if (settings.resolve_symlinks) {
         free_memory_block(&resolve_buf);

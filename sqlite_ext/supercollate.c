@@ -49,8 +49,14 @@ int sqlite3_extension_init(
 
 void depth_decode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
     static const char EMPTY[] = "";
-    if (nbargs!=1) {
+    if (nbargs>1) {
         return sqlite3_result_error(ctx, "Function accepts only 1 argument", SQLITE_ERROR);
+    }
+    // try to handle null as null
+    if (nbargs < 1 || sqlite3_value_type(args[0]) == SQLITE_NULL) {
+        // Handle NULL argument
+        sqlite3_result_null(ctx);
+        return;
     }
     const char* v_orig = (char*) sqlite3_value_text(args[0]);
     size_t len = strlen(v_orig);
@@ -63,7 +69,19 @@ void depth_decode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
 }
 
 void depth_encode(sqlite3_context* ctx, int nbargs, sqlite3_value** args){
+
+    if (nbargs>1) {
+        return sqlite3_result_error(ctx, "Function accepts only 1 argument", SQLITE_ERROR);
+    }
+    // try to handle null as null
+    if (nbargs < 1 || sqlite3_value_type(args[0]) == SQLITE_NULL) {
+        // Handle NULL argument
+        sqlite3_result_null(ctx);
+        return;
+    }
+
     const char* v = (char*)sqlite3_value_text(args[0]);
+
     int len = strlen((char*)v);
     int nbsl = 0;
     
