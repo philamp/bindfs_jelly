@@ -100,17 +100,8 @@ sqlite3 *sqldb = NULL;
 uid_t uid_jelly = 33;
 gid_t gid_jelly = 0;
 
+// where you'll find mrgsrcprefix, fallback, cache_check etc...
 #include "bindfs.h"
-/*
-static const char srcprefix[] = "/actual";
-static const int lensrcprefix = sizeof(srcprefix)-1;
-
-static const char mrgsrcprefix[] = "/virtual";
-static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
-
-static const char fallbackd[] = "fallback";
-static const int lenfallbackd = sizeof(mrgsrcprefix)-1;
-*/
 
 /* Socket file support for MacOS and FreeBSD */
 #if defined(__APPLE__) || defined(__FreeBSD__)
@@ -478,9 +469,17 @@ static char *process_path(const char *path, bool resolve_symlinks)
     else if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         path += lenmrgsrcprefix; // 1 - Skip the "/virtual" part
 
+        // remap path to the first found "/" because virtual can now have suffix for readdir filtering (ex: virtual_bdmv)
+        if (*path != '\0' && *path != '/' && strchr(path, '/') != NULL){
+            path = strchr(path, '/');
+        }
+
         // 2- if then path is just "", there is no item to resolve in db (so it's a folder) 
-        if (*path == '\0'){
+        if (*path == '\0' || strchr(path, '/') == NULL){
             //path = ".";
+            while(*path != '\0'){
+                path++;
+            }
             return strdup(path);
         }
     
@@ -990,6 +989,10 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     // The SQL query with placeholders
     static const char SQL_READDIR[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\')";
     
+    // suffix filtered readdir
+    static const char SQL_READDIR_FILTERED[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE (virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\')) AND (mediatype = ? OR mediatype = 'all')";
+
+
     static const char SQL_READ_CACHE_CHECK_DIR[] = "SELECT DISTINCT depdec(jginfo_rclone_cache_item) FROM main_mapping WHERE jginfo_rclone_cache_item collate sclist BETWEEN depenc(? || '//') AND depenc(? || '/\\')";
 
     int result = 0;
@@ -1034,10 +1037,12 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         #ifdef HAVE_FUSE_3
         filler(buf, "actual", &sta, 0, FUSE_FILL_DIR_PLUS);
         filler(buf, "virtual", &sta, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, "virtual_bdmv", &sta, 0, FUSE_FILL_DIR_PLUS);
         filler(buf, "cache_check", &sta, 0, FUSE_FILL_DIR_PLUS);
         #else
         filler(buf, "actual", &sta, 0);
         filler(buf, "virtual", &sta, 0);
+        filler(buf, "virtual_bdmv", &sta, 0);
         filler(buf, "cache_check", &sta, 0);
         #endif
         return 0;
@@ -1050,9 +1055,51 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
         path += lenmrgsrcprefix; 
 
+        char * SQL_READDIR_FINAL = NULL;
+
+        bool filter_present = false;
+
+        char *suffix = NULL;
+
+
+        if(*path != '\0' && *path != '/' && strchr(path, '/') != NULL){
+            // there is a filtering suffix, find it to build the SQL query
+            
+            char *suf_end = strchr(path, '/');
+            suffix = malloc((suf_end - path) +1);
+
+            strncpy(suffix, path, (suf_end - path));
+
+            suffix[suf_end - path] = '\0';
+
+            // remove the _
+            //suffix++;
+
+            printf("SUFFIX IS : %s", suffix);
+
+            //tmp
+            //free(suffix);
+
+            path = strchr(path, '/');
+            filter_present = true;
+            SQL_READDIR_FINAL = (char*)SQL_READDIR_FILTERED;
+
+        }else{
+            SQL_READDIR_FINAL = (char*)SQL_READDIR;
+        }
+
+        if (*path == '\0' || strchr(path, '/') == NULL){
+
+            while(*path != '\0'){
+                path++;
+            }
+            
+        }
+
+
         sqlite3_stmt *stmt;
 
-        int rc = sqlite3_prepare_v2(sqldb, SQL_READDIR, -1, &stmt, NULL);
+        int rc = sqlite3_prepare_v2(sqldb, SQL_READDIR_FINAL, -1, &stmt, NULL);
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
@@ -1061,6 +1108,16 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
         rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT );
         rc = sqlite3_bind_text(stmt, 2, path, -1, SQLITE_TRANSIENT );
+
+
+
+        if(filter_present){
+            rc = sqlite3_bind_text(stmt, 3, suffix, -1, free );
+        }
+
+
+
+
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
@@ -1321,6 +1378,14 @@ static int bindfs_mkdir(const char *path, mode_t mode)
 
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         path += lenmrgsrcprefix; // Skip the "/virtual" part
+        
+        if(*path != '\0' && *path != '/' && strchr(path, '/') != NULL){
+            path = strchr(path, '/');
+        }
+
+        if (*path == '\0' || strchr(path, '/') == NULL){
+            return -EPERM;
+        }
 
         // dont need to check if already exists as SQL will throw an error if so anyway
 
@@ -1394,9 +1459,16 @@ static int bindfs_rmdir(const char *path)
     // should go down that route only if in virtual
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         path += lenmrgsrcprefix; // Skip the "/virtual" part
+        // remap path to the first found "/" because virtual can now have suffix for readdir filtering (ex: virtual_bdmv)
+        
+        if(*path != '\0' && *path != '/' && strchr(path, '/') != NULL){
+            path = strchr(path, '/');
+        }
 
+        if (*path == '\0' || strchr(path, '/') == NULL){
+            return -EPERM;
+        }
 
-    
         sqlite3_stmt *stmtd;
         int rc = sqlite3_prepare_v2(sqldb, SQL_DIR_DELETE, -1, &stmtd, NULL);
         if (rc != SQLITE_OK) {
@@ -1474,9 +1546,26 @@ static int bindfs_rename(const char *from, const char *to)
     printf("rename de %s en %s", from, to);
 
     if (strncmp(to, mrgsrcprefix, lenmrgsrcprefix) == 0 && strncmp(from, mrgsrcprefix, lenmrgsrcprefix) == 0) {
+        
+        
         to += lenmrgsrcprefix; // Skip the "/virtual" part
         from += lenmrgsrcprefix;
-        char *to_sl = strrchr((char*)to, '/');
+
+        if(*to != '\0' && *to != '/' && strchr(to, '/') != NULL){
+            to = strchr(to, '/');
+        }
+
+        if(*from != '\0' && *from != '/' && strchr(from, '/') != NULL){
+            from = strchr(from, '/');
+        }
+
+
+        if (*to == '\0' || *from == '\0' || strchr(to, '/') == NULL || strchr(from, '/') == NULL){
+            return -EPERM;
+        }
+
+
+        char *to_sl = strrchr(to, '/');
         char *to_parent_path;
 
         // remove the last /part of the TO path to create TO_PARENT_PATH
@@ -1854,6 +1943,15 @@ static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *f
 
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0){
         path += lenmrgsrcprefix;
+
+        if(*path != '\0' && *path != '/' && strchr(path, '/') != NULL){
+            path = strchr(path, '/');
+        }
+
+
+        if (*path == '\0' || strchr(path, '/') == NULL){
+            return -EPERM;
+        }
 
         struct stat st;
 

@@ -98,6 +98,15 @@ export int bindfs_unlink(const char *path)
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         path += lenmrgsrcprefix;
 
+        // remap path to the first found "/" because virtual can now have suffix for readdir filtering (ex: virtual_bdmv)
+        if(*path != '\0' && *path != '/' && strchr(path, '/') != NULL){
+            path = strchr(path, '/');
+        }
+
+        if (*path == '\0' || strchr(path, '/') == NULL){
+            return -EPERM;
+        }
+
         int rc;
 
         std::string deltarget;
