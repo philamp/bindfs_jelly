@@ -1114,10 +1114,6 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         if(filter_present){
             rc = sqlite3_bind_text(stmt, 3, suffix, -1, free );
         }
-
-
-
-
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
