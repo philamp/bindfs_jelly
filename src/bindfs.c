@@ -469,7 +469,7 @@ static char *process_path(const char *path, bool resolve_symlinks)
     else if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         path += lenmrgsrcprefix; // 1 - Skip the "/virtual" part
 
-        // remap path to the first found "/" because virtual can now have suffix for readdir filtering (ex: virtual_bdmv)
+        // remap path to the first found "/" because virtual can now have suffix for read dir filtering (ex: virtual_bdmv)
         if (*path != '\0' && *path != '/' && strchr(path, '/') != NULL){
             path = strchr(path, '/');
         }
@@ -986,11 +986,11 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                           off_t offset, struct fuse_file_info *fi)
 #endif
 {
-    // The SQL query with placeholders
-    static const char SQL_READDIR[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\')";
+    // The SQL query with placeholders, none filtered readdir for depth 1 only
+    static const char SQL_READDIR[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE (virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\'))";
     
-    // suffix filtered readdir
-    static const char SQL_READDIR_FILTERED[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE (virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\')) AND (mediatype = ? OR mediatype = 'all')";
+    // The SQL query with placeholders, suffix filtered readdir for depth 1 only
+    static const char SQL_READDIR_FILTERED[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE (virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\')) AND (SUBSTR(depenc(?), 1, 4) != '0001' OR mediatype = ? OR mediatype = 'all')";
 
 
     static const char SQL_READ_CACHE_CHECK_DIR[] = "SELECT DISTINCT depdec(jginfo_rclone_cache_item) FROM main_mapping WHERE jginfo_rclone_cache_item collate sclist BETWEEN depenc(? || '//') AND depenc(? || '/\\')";
@@ -1072,14 +1072,6 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
             suffix[suf_end - path] = '\0';
 
-            // remove the _
-            //suffix++;
-
-            printf("SUFFIX IS : %s", suffix);
-
-            //tmp
-            //free(suffix);
-
             path = strchr(path, '/');
             filter_present = true;
             SQL_READDIR_FINAL = (char*)SQL_READDIR_FILTERED;
@@ -1103,16 +1095,16 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
             sqlite3_finalize(stmt);
+            free(suffix);
             return -EPERM;
         }
 
         rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT );
         rc = sqlite3_bind_text(stmt, 2, path, -1, SQLITE_TRANSIENT );
 
-
-
         if(filter_present){
-            rc = sqlite3_bind_text(stmt, 3, suffix, -1, free );
+            rc = sqlite3_bind_text(stmt, 3, path, -1, SQLITE_TRANSIENT );
+            rc = sqlite3_bind_text(stmt, 4, suffix, -1, free );
         }
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
@@ -1370,7 +1362,7 @@ static int bindfs_mkdir(const char *path, mode_t mode)
 {
 
     // MK
-    static const char SQL_MKDIR[] = "INSERT INTO main_mapping (virtual_fullpath) VALUES (depenc( ? ))";
+    static const char SQL_MKDIR[] = "INSERT INTO main_mapping (virtual_fullpath, mediatype) VALUES (depenc( ? ), 'all')";
 
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         path += lenmrgsrcprefix; // Skip the "/virtual" part
@@ -1923,7 +1915,7 @@ static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *f
     struct fuse_context *fc;
     char *real_path;
 
-    static const char SQL_INSERT[] = "INSERT INTO main_mapping (virtual_fullpath, actual_fullpath) VALUES (depenc(?), ?)";
+    static const char SQL_INSERT[] = "INSERT INTO main_mapping (virtual_fullpath, actual_fullpath, mediatype) VALUES (depenc(?), ?, 'all')";
 
     static const char fallbackd[] = "fallback";
 
