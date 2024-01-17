@@ -990,7 +990,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     static const char SQL_READDIR[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE (virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\'))";
     
     // The SQL query with placeholders, suffix filtered readdir for depth 1 only
-    static const char SQL_READDIR_FILTERED[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE (virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\')) AND (SUBSTR(depenc(?), 1, 4) != '0001' OR mediatype = ? OR mediatype = 'all')";
+    static const char SQL_READDIR_FILTERED[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE (virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\')) AND (mediatype = ? OR mediatype = 'all')";
 
 
     static const char SQL_READ_CACHE_CHECK_DIR[] = "SELECT DISTINCT depdec(jginfo_rclone_cache_item) FROM main_mapping WHERE jginfo_rclone_cache_item collate sclist BETWEEN depenc(? || '//') AND depenc(? || '/\\')";
@@ -1038,11 +1038,13 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         filler(buf, "actual", &sta, 0, FUSE_FILL_DIR_PLUS);
         filler(buf, "virtual", &sta, 0, FUSE_FILL_DIR_PLUS);
         filler(buf, "virtual_bdmv", &sta, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, "virtual_dv", &sta, 0, FUSE_FILL_DIR_PLUS);
         filler(buf, "cache_check", &sta, 0, FUSE_FILL_DIR_PLUS);
         #else
         filler(buf, "actual", &sta, 0);
         filler(buf, "virtual", &sta, 0);
         filler(buf, "virtual_bdmv", &sta, 0);
+        filler(buf, "virtual_dv", &sta, 0);
         filler(buf, "cache_check", &sta, 0);
         #endif
         return 0;
@@ -1103,8 +1105,8 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         rc = sqlite3_bind_text(stmt, 2, path, -1, SQLITE_TRANSIENT );
 
         if(filter_present){
-            rc = sqlite3_bind_text(stmt, 3, path, -1, SQLITE_TRANSIENT );
-            rc = sqlite3_bind_text(stmt, 4, suffix, -1, free );
+            // rc = sqlite3_bind_text(stmt, 3, path, -1, SQLITE_TRANSIENT );
+            rc = sqlite3_bind_text(stmt, 3, suffix, -1, free );
         }
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
