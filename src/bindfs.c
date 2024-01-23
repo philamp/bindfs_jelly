@@ -420,7 +420,14 @@ static char *process_path(const char *path, bool resolve_symlinks)
 
         char* filepath = sprintf_new("/mounts%s", path);
 
-        if(stat(filepath, &st) == -1){  
+        char* cache_check_readme_freeable = sprintf_new("%s", cache_check_readme);
+
+        if(stat(filepath, &st) == -1){
+            errno = ENOENT;
+            return NULL;
+        }
+
+        if((st.st_mode & S_IFDIR) != S_IFDIR){  
 
             sqlite3_stmt *stmt;
             
@@ -428,16 +435,14 @@ static char *process_path(const char *path, bool resolve_symlinks)
             if (rc != SQLITE_OK) {
                 fprintf(stderr, "Failed to prepare statement: %s\n", sqlite3_errmsg(sqldb));
                 sqlite3_finalize(stmt);
-                free(filepath);
                 errno = ENOENT;
                 return NULL;
             }
 
-            rc = sqlite3_bind_text(stmt, 1, filepath, -1, SQLITE_TRANSIENT );
+            rc = sqlite3_bind_text(stmt, 1, filepath, -1, free );
             if (rc != SQLITE_OK) {
                 fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));
                 sqlite3_finalize(stmt);
-                free(filepath);
                 errno = ENOENT;
                 return NULL;
             }
@@ -445,21 +450,24 @@ static char *process_path(const char *path, bool resolve_symlinks)
             if ((rc = sqlite3_step(stmt)) != SQLITE_ROW) {
                 // file does not exists:
                 sqlite3_finalize(stmt);
-                free(filepath);
                 errno = ENOENT;
                 return NULL;
             }
             sqlite3_finalize(stmt);
+
+            return cache_check_readme_freeable;
             
         }
 
+        while (*path == '/')
+        ++path;
+
         if (*path == '\0'){
             path = ".";
-            free(filepath);
             return strdup(path);
         }
 
-        return filepath;
+        return strdup(path);
         
     }
 
@@ -1269,7 +1277,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             const unsigned char *virtual = sqlite3_column_text(stmt, 0);
 
             struct stat stc;
-            res = getattr_jelly((char*)virtual, &stc);
+            res = getattr_jelly(cache_check_readme, &stc);
             if(res != 0){
                 printf("File targeted by Path %s does not exist, error is: %s",virtual,strerror(-res));
             }
@@ -3660,6 +3668,24 @@ int main(int argc, char *argv[])
     }
 
     free(dbpath);
+
+    FILE *filecheck;
+
+    // Open the file for writing. If it doesn't exist, it will be created.
+    filecheck = fopen(cache_check_readme, "w");
+
+    if (filecheck == NULL) {
+        // Error handling
+        printf("Error opening file!\n");
+        return 1;
+    }
+
+    // Write some text to the file
+    fprintf(filecheck, "This is the default content for files located in cache_check folder.\nAll these files are flags for rclone_jelly fork to notice that caching additionnal data locally is not needed anymore");
+
+    // Close the file
+    fclose(filecheck);
+
     // end custom jelly fork
 
 #if defined(HAVE_FUSE_29) || defined(HAVE_FUSE_3)

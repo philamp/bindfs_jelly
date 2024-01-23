@@ -18,6 +18,8 @@ static const int lencache_check = sizeof(cache_check)-1;
 static const char fallbackd[] = "fallback";
 static const int lenfallbackd = sizeof(mrgsrcprefix)-1;
 
+static const char cache_check_readme[] = "/mounts/cache_check_readme.txt";
+
 
 extern sqlite3 *sqldb;
 export int delete_file(const char *path, int (*target_delete_func)(const char *));
