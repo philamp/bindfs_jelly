@@ -1131,17 +1131,20 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             if(res != 0){
                 printf("File targeted by Path %s does not exist, error is: %s",actual,strerror(-res));
             }
+            else{
+                char *lastPart = strrchr((char*)virtual, '/') +1;
 
-            char *lastPart = strrchr((char*)virtual, '/') +1;
-
-            #ifdef HAVE_FUSE_3
-            if (filler(buf, (char*)lastPart, &stc, 0, FUSE_FILL_DIR_PLUS) != 0) {
-            #else
-            if (filler(buf, (char*)lastPart, &stc, 0) != 0) {
-            #endif
-            result = errno != 0 ? -errno : -EIO;
-            break;
+                #ifdef HAVE_FUSE_3
+                if (filler(buf, (char*)lastPart, &stc, 0, FUSE_FILL_DIR_PLUS) != 0) {
+                #else
+                if (filler(buf, (char*)lastPart, &stc, 0) != 0) {
+                #endif
+                result = errno != 0 ? -errno : -EIO;
+                break;
+                }
             }
+
+
 
 
             // TODO ERROR MGMT
@@ -1280,18 +1283,22 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             res = getattr_jelly(cache_check_readme, &stc);
             if(res != 0){
                 printf("File targeted by Path %s does not exist, error is: %s",virtual,strerror(-res));
+            }else{
+                
+                char *lastPart = strrchr((char*)virtual, '/') +1;
+
+                #ifdef HAVE_FUSE_3
+                if (filler(buf, (char*)lastPart, &stc, 0, FUSE_FILL_DIR_PLUS) != 0) {
+                #else
+                if (filler(buf, (char*)lastPart, &stc, 0) != 0) {
+                #endif
+                result = errno != 0 ? -errno : -EIO;
+                break;
+                }
+
             }
 
-            char *lastPart = strrchr((char*)virtual, '/') +1;
 
-            #ifdef HAVE_FUSE_3
-            if (filler(buf, (char*)lastPart, &stc, 0, FUSE_FILL_DIR_PLUS) != 0) {
-            #else
-            if (filler(buf, (char*)lastPart, &stc, 0) != 0) {
-            #endif
-            result = errno != 0 ? -errno : -EIO;
-            break;
-            }
 
 
         }
