@@ -418,7 +418,7 @@ static char *process_path(const char *path, bool resolve_symlinks)
 
         //check if path exists as an actual folder : if not check in db, else continue
 
-        char* filepath = sprintf_new("/mounts%s", path);
+        char* filepath = sprintf_new("%s%s", settings.mntsrc, path);
 
         char* cache_check_readme_freeable = sprintf_new("%s", cache_check_readme);
 
@@ -1255,7 +1255,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         path += lencache_check;
 
         // add working dir at start
-        char* dirpath = sprintf_new("/mounts%s", path);
+        char* dirpath = sprintf_new("%s%s", settings.mntsrc, path);
  
         sqlite3_stmt *stmt;
 
@@ -3649,14 +3649,12 @@ int main(int argc, char *argv[])
     char *errMsg = NULL;
     int rc = 0;
 
-    char* dbpath = sprintf_new("%s/.bindfs_jelly.db", settings.mntsrc);
-    printf("dbpath:%s",dbpath);
+    const char* dbpath = "/jellygrail/.bindfs_jelly.db";
 
     rc = sqlite3_open(dbpath, &sqldb);
     if (rc != SQLITE_OK) {
         fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(sqldb));
         sqlite3_close(sqldb);
-        free(dbpath);
         return 1; // Or handle the error as appropriate
     }
 
@@ -3673,8 +3671,6 @@ int main(int argc, char *argv[])
         sqlite3_free(errMsg);
         // Handle error...
     }
-
-    free(dbpath);
 
     FILE *filecheck;
 
