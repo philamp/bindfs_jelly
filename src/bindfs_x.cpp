@@ -91,9 +91,13 @@ class transact{
 export int bindfs_unlink(const char *path)
 {
     // select
-    static const char SQL_TARGET[] = "SELECT actual_fullpath FROM main_mapping WHERE virtual_fullpath = depenc( ? ) AND virtual_fullpath is NOT NULL";
+    static const char SQL_TARGET[] = "SELECT actual_fullpath, jginfo_rd_torrent_folder, depdec(jginfo_rclone_cache_item) FROM main_mapping WHERE virtual_fullpath = depenc( ? ) AND actual_fullpath is NOT NULL";
     // DELETE
     static const char SQL_FILE_DELETE[] = "DELETE FROM main_mapping WHERE virtual_fullpath = depenc( ? )";
+    // read torrent folder (files only)
+    static const char SQL_TORRENT_FOLDER_LIST[] = "SELECT virtual_fullpath FROM main_mapping WHERE jginfo_rd_torrent_folder = ? AND actual_fullpath is NOT NULL";
+    // delete all items (liklely folders) of this release (check if jellyfin delete them before)
+    // static const char SQL_DELETE_CORRESPONDING_RELEASE_ITEMS[] = "DELETE FROM main_mapping WHERE jginfo_rd_torrent_folder = ?";
 
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         path += lenmrgsrcprefix;
@@ -110,6 +114,9 @@ export int bindfs_unlink(const char *path)
         int rc;
 
         std::string deltarget;
+        std::string torrentfolder;
+        std::string torrentfile;
+
 
         // 0 BEGIN
         {
@@ -122,6 +129,8 @@ export int bindfs_unlink(const char *path)
 
             if((rc = sting.step()) == SQLITE_ROW){
                 deltarget = (char*)sqlite3_column_text(sting.stmt, 0);
+                torrentfolder = sqlite3_column_type(sting.stmt, 1) == SQLITE_NULL ? "" : (char*)sqlite3_column_text(sting.stmt, 1);
+                torrentfile = sqlite3_column_type(sting.stmt, 2) == SQLITE_NULL ? "" : (char*)sqlite3_column_text(sting.stmt, 2);
             }else{
                 return -ENOENT;
             }
@@ -143,8 +152,46 @@ export int bindfs_unlink(const char *path)
         }
 
 
-        // 4 ACTUAL DELETE 
+        // 4 ACTUAL DELETE if fallback file
         if (strncmp(deltarget.c_str(), fallbackd, lenfallbackd) == 0) {
+            delete_file(deltarget.c_str(), &unlink);
+        }else if(strncmp(torrentfolder.c_str(), remoted_, lenremoted_) == 0){
+            // if no more file entries having this torrentfolder -> del source torrent file  (-> and del all virtual refering to the same release folder -> parent folder empty ? ): not needed if jellyfin deletes folders
+            //printf("there is a remote torrentfolder corresponding to this file / -> if statement is working");
+            // 0 BEGIN
+            {
+                transact trans;
+            
+            // 1 SELECT 
+            {
+                stating sting(SQL_TORRENT_FOLDER_LIST);
+                sting.bind(1, torrentfolder.c_str());
+
+                if((rc = sting.step()) != SQLITE_ROW){
+                    // it means there is no more file corresponding to this release
+                    if(torrentfile != ""){
+                        // we use unlink here as the torrent file path is not relative from the mount (contrary to fallback files)
+                        unlink(torrentfile.c_str());
+                        printf("\ndeletion of torrent release having this last file: %s\n", torrentfile.c_str());
+                        // this will trigger the deletion of the torrent release in the RD mount (rclone_rd fork)
+                    }
+                    //{
+                        // dell all entries refering to the same release folder (likely subfolders of a multiple file release if it is)
+                      //  stating delsting(SQL_DELETE_CORRESPONDING_RELEASE_ITEMS);
+                        //delsting.bind(1, torrentfolder.c_str());
+
+                    //}
+                }
+            }
+
+            // 3 COMMIT
+            
+                trans.commit();
+            }
+
+
+
+        }else{
             delete_file(deltarget.c_str(), &unlink);
         }
 
