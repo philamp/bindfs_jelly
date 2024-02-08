@@ -167,12 +167,14 @@ export int bindfs_unlink(const char *path)
                 stating sting(SQL_TORRENT_FOLDER_LIST);
                 sting.bind(1, torrentfolder.c_str());
 
+                printf("\n -> Virtual deletion of a file %s \n..inside this torrent release: %s\n", torrentfile.c_str(), torrentfolder.c_str());
+
                 if((rc = sting.step()) != SQLITE_ROW){
                     // it means there is no more file corresponding to this release
                     if(torrentfile != ""){
                         // we use unlink here as the torrent file path is not relative from the mount (contrary to fallback files)
                         unlink(torrentfile.c_str());
-                        printf("\ndeletion of torrent release having this last file: %s\n", torrentfile.c_str());
+                        printf("\n -> Deletion of torrent release %s \n..having this last file: %s\n", torrentfolder.c_str(), torrentfile.c_str());
                         // this will trigger the deletion of the torrent release in the RD mount (rclone_rd fork)
                     }
                     //{
