@@ -194,7 +194,7 @@ export int bindfs_unlink(const char *path)
 
 
         }else{
-            delete_file(deltarget.c_str(), &unlink);
+            unlink(deltarget.c_str());
         }
 
         return 0;
