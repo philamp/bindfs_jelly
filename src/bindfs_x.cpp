@@ -99,6 +99,11 @@ export int bindfs_unlink(const char *path)
     // delete all items (liklely folders) of this release (check if jellyfin delete them before)
     // static const char SQL_DELETE_CORRESPONDING_RELEASE_ITEMS[] = "DELETE FROM main_mapping WHERE jginfo_rd_torrent_folder = ?";
 
+    // string replace to handle deletion of vfs cache files when a torrentfile (jginfo_rclone_cache_item) is deleted in bindfs
+    static const std::string toReplace = "/mounts";
+    static const std::string vfs_replacement = "/jellygrail/vfs_cache/vfs";
+    static const std::string vfsMeta_replacement = "/jellygrail/vfs_cache/vfsMeta";
+
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         path += lenmrgsrcprefix;
 
@@ -113,9 +118,9 @@ export int bindfs_unlink(const char *path)
 
         int rc;
 
-        std::string deltarget;
-        std::string torrentfolder;
-        std::string torrentfile;
+        std::string deltarget = "";
+        std::string torrentfolder = "";
+        std::string torrentfile = "";
 
 
         // 0 BEGIN
@@ -151,11 +156,25 @@ export int bindfs_unlink(const char *path)
             trans.commit();
         }
 
+        // 2.2 delete the corresponding cache files (outside of the transaction is not a problem)
+        if(torrentfile != ""){
+            std::string vfstorrentfile = torrentfile;
+            std::string vfsmetatorrentfile = torrentfile;
+            std::size_t pos = vfstorrentfile.find(toReplace);
+            if (pos != std::string::npos) {
+                vfstorrentfile.replace(pos, toReplace.length(), vfs_replacement);
+                unlink(vfstorrentfile.c_str());
+                vfsmetatorrentfile.replace(pos, toReplace.length(), vfsMeta_replacement);
+                unlink(vfsmetatorrentfile.c_str());
+            }
+        }
 
         // 4 ACTUAL DELETE if fallback file
         if (strncmp(deltarget.c_str(), fallbackd, lenfallbackd) == 0) {
+            // we can use deletefile here because it's relative path to the working directory of bindfs
             delete_file(deltarget.c_str(), &unlink);
         }else if(strncmp(torrentfolder.c_str(), remoted_, lenremoted_) == 0){
+            // 4.2 else it's a RD remote mount
             // if no more file entries having this torrentfolder -> del source torrent file  (-> and del all virtual refering to the same release folder -> parent folder empty ? ): not needed if jellyfin deletes folders
             //printf("there is a remote torrentfolder corresponding to this file / -> if statement is working");
             // 0 BEGIN
@@ -175,7 +194,7 @@ export int bindfs_unlink(const char *path)
                         // we use unlink here as the torrent file path is not relative from the mount (contrary to fallback files)
                         unlink(torrentfile.c_str());
                         printf("\n -> Deletion of torrent release %s \n..having this last file: %s\n", torrentfolder.c_str(), torrentfile.c_str());
-                        // this will trigger the deletion of the torrent release in the RD mount (rclone_rd fork)
+                        // this will trigger the deletion of the torrent release in the RD mount (rclone_rd fork)                   
                     }
                     //{
                         // dell all entries refering to the same release folder (likely subfolders of a multiple file release if it is)
