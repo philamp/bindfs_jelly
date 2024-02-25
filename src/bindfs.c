@@ -1000,6 +1000,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     // The SQL query with placeholders, suffix filtered readdir for depth 1 only
     static const char SQL_READDIR_FILTERED[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE (virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\')) AND (mediatype = ? OR mediatype = 'all')";
 
+    static const char SQL_READDIR_LATEST[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE (virtual_fullpath BETWEEN depenc(? || '//') AND depenc(? || '/\\')) AND (last_updated > ?)";
 
     static const char SQL_READ_CACHE_CHECK_DIR[] = "SELECT DISTINCT depdec(jginfo_rclone_cache_item) FROM main_mapping WHERE jginfo_rclone_cache_item collate sclist BETWEEN depenc(? || '//') AND depenc(? || '/\\')";
 
@@ -1047,12 +1048,18 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         filler(buf, "virtual", &sta, 0, FUSE_FILL_DIR_PLUS);
         filler(buf, "virtual_bdmv", &sta, 0, FUSE_FILL_DIR_PLUS);
         filler(buf, "virtual_dv", &sta, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, "virtual_latest1week_604800", &sta, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, "virtual_latest2weeks_1209600", &sta, 0, FUSE_FILL_DIR_PLUS);
+        filler(buf, "virtual_latest3weeks_1814400", &sta, 0, FUSE_FILL_DIR_PLUS);
         filler(buf, "cache_check", &sta, 0, FUSE_FILL_DIR_PLUS);
         #else
         filler(buf, "actual", &sta, 0);
         filler(buf, "virtual", &sta, 0);
         filler(buf, "virtual_bdmv", &sta, 0);
         filler(buf, "virtual_dv", &sta, 0);
+        filler(buf, "virtual_latest1week_604800", &sta, 0);
+        filler(buf, "virtual_latest2weeks_1209600", &sta, 0);
+        filler(buf, "virtual_latest3weeks_1814400", &sta, 0);
         filler(buf, "cache_check", &sta, 0);
         #endif
         return 0;
@@ -1063,14 +1070,18 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         int res = 0;
 
-        path += lenmrgsrcprefix; 
+        // FROM HERE PATH STARTS AT _suffix/ or /
+        path += lenmrgsrcprefix;
 
         char * SQL_READDIR_FINAL = NULL;
 
         bool filter_present = false;
 
+        bool int_filter_present = false;
+
         char *suffix = NULL;
 
+        int64_t x_time_ago = 0;
 
         if(*path != '\0' && *path != '/' && strchr(path, '/') != NULL){
             // there is a filtering suffix, find it to build the SQL query
@@ -1082,11 +1093,26 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
             suffix[suf_end - path] = '\0';
 
-            path = strchr(path, '/');
-            filter_present = true;
-            SQL_READDIR_FINAL = (char*)SQL_READDIR_FILTERED;
 
-        }else{
+            // insert date filtering here
+            if(strncmp(suffix, latestsuffix, lenlatestsuffix) == 0){
+                int64_t now_long = (int64_t)time(NULL);
+                // there is a latest suffix
+                suffix = strrchr(suffix, '_') + 1;
+                char *endPtr;
+                x_time_ago = now_long - strtoll(suffix, &endPtr, 10);
+                int_filter_present = true;
+                path = strchr(path, '/');
+                SQL_READDIR_FINAL = (char*)SQL_READDIR_LATEST;
+            }
+            else{
+                path = strchr(path, '/');
+                filter_present = true;
+                SQL_READDIR_FINAL = (char*)SQL_READDIR_FILTERED;
+            }
+
+        }
+        else{
             SQL_READDIR_FINAL = (char*)SQL_READDIR;
         }
 
@@ -1115,6 +1141,9 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         if(filter_present){
             // rc = sqlite3_bind_text(stmt, 3, path, -1, SQLITE_TRANSIENT );
             rc = sqlite3_bind_text(stmt, 3, suffix, -1, free );
+        }
+        else if(int_filter_present){
+            rc = sqlite3_bind_int64(stmt, 3, x_time_ago);
         }
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Failed to bind text: %s\n", sqlite3_errmsg(sqldb));

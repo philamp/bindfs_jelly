@@ -21,6 +21,11 @@ static const int lenfallbackd = sizeof(fallbackd)-1;
 static const char remoted_[] = "/mounts/remote_";
 static const int lenremoted_ = sizeof(remoted_)-1;
 
+static const char latestsuffix[] = "_latest";
+static const int lenlatestsuffix = sizeof(latestsuffix)-1;
+
+
+
 static const char cache_check_readme[] = "/mounts/cache_check_readme.txt";
 
 
