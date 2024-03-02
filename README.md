@@ -1,6 +1,8 @@
 ## Fork of BindFS with virtual paths stored in SQLite ##
 
+This is a fork of BindFS Providing virtual renaming and virtual folders stored in a SQLite db.
 This is used by https://github.com/philamp/jellygrail. Beware that code must be modified a litlle to fit another purpose.
+It seems to be the first virtual file-system implementing virtual renaming ☆
 
 ### WARNING
 This fork has some former functionnalities butchered for the moment:
