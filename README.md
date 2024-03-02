@@ -1,5 +1,7 @@
 ## Fork of BindFS with virtual paths stored in SQLite ##
 
+This is used by https://github.com/philamp/jellygrail. Beware that code must be modified a litlle to fit another purpose.
+
 ### WARNING
 This fork has some former functionnalities butchered for the moment:
 * getxattr is not implemented anymore and this FS will act as if it doesn't know getxattr-
