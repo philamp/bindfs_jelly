@@ -244,6 +244,9 @@ static int is_mirrored_user(uid_t uid);
 /* Processes the virtual path to a real path. Always free() the result. */
 static char *process_path(const char *path, bool resolve_symlinks);
 
+/*new process_path, the above becomes a wrapper*/
+static char *process_path_new(const char *path, bool resolve_symlinks, time_t *timestamp);
+
 /* The common parts of getattr and fgetattr. */
 static int getattr_common(const char *path, struct stat *stbuf);
 
@@ -398,9 +401,16 @@ static int is_mirrored_user(uid_t uid)
     return 0;
 }
 
+/* wrapper of process_path_new */
+
 static char *process_path(const char *path, bool resolve_symlinks)
 {
-    static const char SQL_PROCESS_PATH[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath) FROM main_mapping WHERE virtual_fullpath = depenc(?)";
+    return process_path_new(path, resolve_symlinks, NULL);
+}
+
+static char *process_path_new(const char *path, bool resolve_symlinks, time_t *timestamp)
+{
+    static const char SQL_PROCESS_PATH[] = "SELECT IFNULL(actual_fullpath, ''), depdec(virtual_fullpath), last_updated FROM main_mapping WHERE virtual_fullpath = depenc(?)";
 
     static const char SQL_PROCESS_CACHE_ITEM[] = "SELECT IFNULL(depdec(jginfo_rclone_cache_item),'') FROM main_mapping WHERE jginfo_rclone_cache_item = depenc(?)";
 
@@ -511,6 +521,14 @@ static char *process_path(const char *path, bool resolve_symlinks)
         const unsigned char* target = NULL;
         if ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
             target = sqlite3_column_text(stmt, 0);
+            if (timestamp != NULL){
+                if(sqlite3_column_type(stmt, 2) == SQLITE_INTEGER ){
+                    *timestamp = (time_t)sqlite3_column_int64(stmt, 2);
+                }else{
+                    *timestamp = 0;
+                }
+            }
+
         }else if (rc == SQLITE_DONE) {
             sqlite3_finalize(stmt);
             errno = ENOENT;
@@ -907,8 +925,13 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
 
     int res;
     char *real_path;
-
-    real_path = process_path(path, true);
+    time_t timestamp;
+    if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0){
+        real_path = process_path_new(path, true, &timestamp);
+    }
+    else{
+        real_path = process_path(path, true);
+    }
     
     if (real_path == NULL)
         return -errno;
@@ -918,6 +941,11 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
     // const char *mrgsrcprefix = "/virtual";
     if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0){
         res = getattr_jelly(real_path, stbuf);
+        if(timestamp != 0){
+            stbuf->st_atime = timestamp;
+            stbuf->st_mtime = timestamp;
+            stbuf->st_ctime = timestamp;
+        }
     }
     /* else if (strncmp(path, cache_check, lencache_check) == 0){
         res = getattr_jelly(real_path, stbuf);
