@@ -100,14 +100,18 @@ sqlite3 *sqldb = NULL;
 uid_t uid_jelly = 33;
 gid_t gid_jelly = 0;
 
+// socket fd
+int sockfd = 0;
+
 // where you'll find mrgsrcprefix, fallback, cache_check etc...
 #include "bindfs.h"
 
 /* Socket file support for MacOS and FreeBSD */
-#if defined(__APPLE__) || defined(__FreeBSD__)
+// #if defined(__APPLE__) || defined(__FreeBSD__) 
 #include <sys/socket.h>
 #include <sys/un.h>
-#endif
+// #endif
+#define SOCKET_PATH "/tmp/jelly_socket"
 
 /* Apple Structs */
 #ifdef __APPLE__
@@ -3745,6 +3749,50 @@ int main(int argc, char *argv[])
 
     // Close the file
     fclose(filecheck);
+
+    // --- jelly_socket ---
+    struct sockaddr_un serv_addr;
+
+    // Create a UNIX socket
+    if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+        fprintf(stderr, "Socket creation error");
+    }
+
+    // Initialize the sockaddr_un structure
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sun_family = AF_UNIX;
+    strncpy(serv_addr.sun_path, SOCKET_PATH, sizeof(serv_addr.sun_path) - 1);
+
+    // Connect to the server
+    while (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+         fprintf(stderr, "fail to connect to socket ... retry in 2s\n");
+         sleep(2);
+    }
+
+    // TODO -- test part to remove
+    char buffer[1024] = {0};
+
+    const char path[] = "message 1";
+
+    send(sockfd, path, strlen(path), 0);
+    printf("Word sent is: %s\n", path);
+
+    int valread = read(sockfd, buffer, sizeof(buffer) - 1);
+    if (valread > 0) {
+        printf("Server response: %s\n", buffer);
+    }
+    sleep(2);
+    const char pathb[] = "message 2";
+
+    send(sockfd, pathb, strlen(path), 0);
+    printf("Word sent is: %s\n", pathb);
+
+    valread = read(sockfd, buffer, sizeof(buffer) - 1);
+    if (valread > 0) {
+        printf("2nd Server response: %s\n", buffer);
+    }
+    // end TODO test part to remove
+
 
     // end custom jelly fork
 
