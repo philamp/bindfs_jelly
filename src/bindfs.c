@@ -111,7 +111,7 @@ int sockfd = 0;
 #include <sys/socket.h>
 #include <sys/un.h>
 // #endif
-#define SOCKET_PATH "/tmp/jelly_socket"
+#define SOCKET_NFO_PATH "/tmp/jelly_nfopath_socket"
 
 /* Apple Structs */
 #ifdef __APPLE__
@@ -255,6 +255,8 @@ static char *process_path_new(const char *path, bool resolve_symlinks, time_t *t
 static int getattr_common(const char *path, struct stat *stbuf);
 
 static int getattr_jelly(const char *procpath, struct stat *stbuf);
+
+int set_socket_timeout(int sockfd, int timeout_sec);
 
 uint64_t djb2_hash(const char *str);
 
@@ -424,6 +426,8 @@ static char *process_path_new(const char *path, bool resolve_symlinks, time_t *t
     }
 
 
+
+
     if (strncmp(path, cache_check, lencache_check) == 0) {
         path += lencache_check; // Skip the "/cache_check" part
 
@@ -490,6 +494,35 @@ static char *process_path_new(const char *path, bool resolve_symlinks, time_t *t
     }
     else if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         path += lenmrgsrcprefix; // 1 - Skip the "/virtual" part
+
+
+
+
+        const char *dot = strrchr(path, '.');
+        if(dot != NULL && strcmp(dot, ".nfo") == 0){
+
+            char buffer[1024] = {0};
+
+            //const char path[] = "message 1";
+
+            if (send(sockfd, path, strlen(path), 0) < 0){
+                fprintf(stderr, "Failed to send to socket. Alternate logic needed\n");
+                // TODO alternate logic here (same as if response is not received)
+            }
+            
+
+            int valread = read(sockfd, buffer, sizeof(buffer) - 1);
+            if (valread > 0) {
+                return strdup(buffer);
+            }else{
+                fprintf(stderr, "Failed to receive from socket. Alternate logic needed\n");
+                // TODO alternate logic here (same as if response is not received)
+            }
+
+
+        }
+
+
 
         // remap path to the first found "/" because virtual can now have suffix for read dir filtering (ex: virtual_bdmv)
         if (*path != '\0' && *path != '/' && strchr(path, '/') != NULL){
@@ -936,9 +969,28 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
     else{
         real_path = process_path(path, true);
     }
-    
-    if (real_path == NULL)
-        return -errno;
+
+
+    if(real_path == NULL){
+        free(real_path);
+        return -errno;  
+    }
+
+    // if did not find any result, it could also be a dynamic nfo file ---to be changed
+    // TODO romoeve or change
+    /*
+    if (real_path == NULL){
+        const char *dot = strrchr(path, '.');
+        if(dot != NULL && strcmp(dot, ".nfo") == 0){
+            res = getattr_jelly((char*)path, stbuf);
+            free(real_path);
+            return res;
+        }else{
+            free(real_path);
+            return -errno;
+        }
+    }
+    */
     
 
     // jelly custom
@@ -1195,6 +1247,30 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             else{
                 char *lastPart = strrchr((char*)virtual, '/') +1;
 
+
+
+                const char *dot = strrchr(lastPart, '.');
+                // TODO : complete the list of accepted filetypes
+                if (dot != NULL && (strcmp(dot, ".mkv") == 0 || strcmp(dot, ".mp4") == 0 || strcmp(dot, ".avi") == 0)){
+                    char *intermediate = NULL;
+                    intermediate = malloc((dot - lastPart) +1);
+                    strncpy(intermediate, lastPart, dot - lastPart);
+                    char *nfoFile = sprintf_new("%s.nfo", intermediate); // will be freed by fuse
+                    struct stat stnfo;
+                    res = getattr_jelly((char*)nfoFile, &stnfo);
+                    #ifdef HAVE_FUSE_3
+                    if (filler(buf, (char*)nfoFile, &stnfo, 0, FUSE_FILL_DIR_PLUS) != 0) {
+                    #else
+                    if (filler(buf, (char*)nfoFile, &stnfo, 0) != 0) {
+                    #endif
+                    result = errno != 0 ? -errno : -EIO;
+                    break;
+                    }
+
+                    free(intermediate);
+                }
+
+
                 #ifdef HAVE_FUSE_3
                 if (filler(buf, (char*)lastPart, &stc, 0, FUSE_FILL_DIR_PLUS) != 0) {
                 #else
@@ -1203,6 +1279,16 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                 result = errno != 0 ? -errno : -EIO;
                 break;
                 }
+
+
+
+
+                
+
+
+
+
+
             }
 
 
@@ -3740,7 +3826,7 @@ int main(int argc, char *argv[])
 
     if (filecheck == NULL) {
         // Error handling
-        printf("Error opening file!\n");
+        fprintf(stderr, "Error opening file!\n");
         return 1;
     }
 
@@ -3750,48 +3836,6 @@ int main(int argc, char *argv[])
     // Close the file
     fclose(filecheck);
 
-    // --- jelly_socket ---
-    struct sockaddr_un serv_addr;
-
-    // Create a UNIX socket
-    if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
-        fprintf(stderr, "Socket creation error");
-    }
-
-    // Initialize the sockaddr_un structure
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sun_family = AF_UNIX;
-    strncpy(serv_addr.sun_path, SOCKET_PATH, sizeof(serv_addr.sun_path) - 1);
-
-    // Connect to the server
-    while (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-         fprintf(stderr, "fail to connect to socket ... retry in 2s\n");
-         sleep(2);
-    }
-
-    // TODO -- test part to remove
-    char buffer[1024] = {0};
-
-    const char path[] = "message 1";
-
-    send(sockfd, path, strlen(path), 0);
-    printf("Word sent is: %s\n", path);
-
-    int valread = read(sockfd, buffer, sizeof(buffer) - 1);
-    if (valread > 0) {
-        printf("Server response: %s\n", buffer);
-    }
-    sleep(2);
-    const char pathb[] = "message 2";
-
-    send(sockfd, pathb, strlen(path), 0);
-    printf("Word sent is: %s\n", pathb);
-
-    valread = read(sockfd, buffer, sizeof(buffer) - 1);
-    if (valread > 0) {
-        printf("2nd Server response: %s\n", buffer);
-    }
-    // end TODO test part to remove
 
 
     // end custom jelly fork
@@ -3836,12 +3880,64 @@ int main(int argc, char *argv[])
     /* fuse_main will daemonize by fork()'ing. The signal handler will persist. */
     setup_signal_handling();
 
+    // --- jelly_socket ---
+    struct sockaddr_un serv_addr;
+
+    // Create a UNIX socket
+    if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+        fprintf(stderr, "Socket creation error");
+    }
+
+    if (set_socket_timeout(sockfd, 5) < 0) {
+        fprintf(stderr, "Socket tiemout setup error");
+    }
+
+    // Initialize the sockaddr_un structure
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sun_family = AF_UNIX;
+    strncpy(serv_addr.sun_path, SOCKET_NFO_PATH, sizeof(serv_addr.sun_path) - 1);
+
+    // Connect to the server
+    int socket_tries = 0;
+    int will_fail = 0;
+    while (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+         printf("Python socket not yet ready, retry in 5s ...\n");
+         sleep(5);
+         socket_tries += 1;
+         if (socket_tries > 15){
+            fprintf(stderr,"Critical - Python socket unavailable \n");
+            will_fail = 1;
+            break;
+         }
+    }
+    if(will_fail == 0){
+        printf("-- Connexion successful --\n");
+    }
+    // --- jelly_socket end---
+
     fuse_main_return = fuse_main(args.argc, args.argv, &bindfs_oper, NULL);
+
 
     fuse_opt_free_args(&args);
     close(settings.mntsrc_fd);
 
     return bindfs_init_failed ? 1 : fuse_main_return;
+}
+
+int set_socket_timeout(int sockfd, int timeout_sec) {
+    struct timeval timeout;
+    timeout.tv_sec = timeout_sec;
+    timeout.tv_usec = 0;
+
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        fprintf(stderr, "setsockopt failed for receive timeout\n");
+        return -1;
+    }
+    if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0) {
+        fprintf(stderr, "setsockopt failed for send timeout\n");
+        return -1;
+    }
+    return 0;
 }
 
 static int getattr_jelly(const char *procpath, struct stat *stbuf)
@@ -3858,6 +3954,19 @@ static int getattr_jelly(const char *procpath, struct stat *stbuf)
         //res = getattr_common(procpath, stbuf);
         return 0;
     }
+
+    
+    const char *dot = strrchr(procpath, '.');
+    if(dot != NULL && strcmp(dot, ".nfo") == 0){
+        stbuf->st_mode = S_IFREG | 0644;
+        stbuf->st_nlink = 1;
+        stbuf->st_size = 4096;
+        stbuf->st_uid = uid_jelly;
+        stbuf->st_gid = gid_jelly;
+        return 0;
+    }
+    
+    
 
     // it's not a folder
 
