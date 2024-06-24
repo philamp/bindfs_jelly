@@ -508,6 +508,7 @@ static char *process_path_new(const char *path, bool resolve_symlinks, time_t *t
             if (send(sockfd, path, strlen(path), 0) < 0){
                 fprintf(stderr, "Failed to send to socket. Alternate logic needed\n");
                 // TODO alternate logic here (same as if response is not received)
+                return strdup(filedefaultnfo_readme);
             }
             
 
@@ -517,6 +518,7 @@ static char *process_path_new(const char *path, bool resolve_symlinks, time_t *t
             }else{
                 fprintf(stderr, "Failed to receive from socket. Alternate logic needed\n");
                 // TODO alternate logic here (same as if response is not received)
+                return strdup(filedefaultnfo_readme);
             }
 
 
@@ -972,25 +974,8 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
 
 
     if(real_path == NULL){
-        free(real_path);
         return -errno;  
     }
-
-    // if did not find any result, it could also be a dynamic nfo file ---to be changed
-    // TODO romoeve or change
-    /*
-    if (real_path == NULL){
-        const char *dot = strrchr(path, '.');
-        if(dot != NULL && strcmp(dot, ".nfo") == 0){
-            res = getattr_jelly((char*)path, stbuf);
-            free(real_path);
-            return res;
-        }else{
-            free(real_path);
-            return -errno;
-        }
-    }
-    */
     
 
     // jelly custom
@@ -1252,9 +1237,9 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                 const char *dot = strrchr(lastPart, '.');
                 // TODO : complete the list of accepted filetypes
                 if (dot != NULL && (strcmp(dot, ".mkv") == 0 || strcmp(dot, ".mp4") == 0 || strcmp(dot, ".avi") == 0)){
-                    char *intermediate = NULL;
-                    intermediate = malloc((dot - lastPart) +1);
+                    char *intermediate = malloc((dot - lastPart) +1);
                     strncpy(intermediate, lastPart, dot - lastPart);
+                    intermediate[dot - lastPart] = '\0'; // null terminate !!!
                     char *nfoFile = sprintf_new("%s.nfo", intermediate); // will be freed by fuse
                     struct stat stnfo;
                     res = getattr_jelly((char*)nfoFile, &stnfo);
@@ -3836,6 +3821,23 @@ int main(int argc, char *argv[])
     // Close the file
     fclose(filecheck);
 
+    FILE *filedefaultnfo;
+
+    // Open the file for writing. If it doesn't exist, it will be created.
+    filedefaultnfo = fopen(filedefaultnfo_readme, "w");
+
+    if (filedefaultnfo == NULL) {
+        // Error handling
+        fprintf(stderr, "Error opening file!\n");
+        return 1;
+    }
+
+    // Write some text to the file
+    fprintf(filedefaultnfo, "This is the default content for nfo files in case of socket failure.\nHappens if Python service is not available.\nPlease report this issue in the corresponding JellyGrail github page.");
+
+    // Close the file
+    fclose(filedefaultnfo);
+
 
 
     // end custom jelly fork
@@ -3904,7 +3906,7 @@ int main(int argc, char *argv[])
          printf("Python socket not yet ready, retry in 5s ...\n");
          sleep(5);
          socket_tries += 1;
-         if (socket_tries > 15){
+         if (socket_tries > 2){
             fprintf(stderr,"Critical - Python socket unavailable \n");
             will_fail = 1;
             break;

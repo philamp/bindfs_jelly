@@ -28,6 +28,8 @@ static const int lenlatestsuffix = sizeof(latestsuffix)-1;
 
 static const char cache_check_readme[] = "/mounts/cache_check_readme.txt";
 
+static const char filedefaultnfo_readme[] = "/mounts/filedefaultnfo_readme.txt";
+
 
 extern sqlite3 *sqldb;
 export int delete_file(const char *path, int (*target_delete_func)(const char *));
