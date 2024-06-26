@@ -3902,11 +3902,12 @@ int main(int argc, char *argv[])
     // Connect to the server
     int socket_tries = 0;
     int will_fail = 0;
+    printf("Python socket not yet ready, retry every 1s ...");
     while (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-         printf("Python socket not yet ready, retry in 5s ...\n");
-         sleep(5);
+         printf(".");
+         sleep(1);
          socket_tries += 1;
-         if (socket_tries > 2){
+         if (socket_tries > 30){
             fprintf(stderr,"Critical - Python socket unavailable \n");
             will_fail = 1;
             break;
