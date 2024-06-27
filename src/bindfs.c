@@ -3905,6 +3905,7 @@ int main(int argc, char *argv[])
     printf("Python socket not yet ready, retry every 1s ...");
     while (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
          printf(".");
+         fflush(stdout);
          sleep(1);
          socket_tries += 1;
          if (socket_tries > 30){
