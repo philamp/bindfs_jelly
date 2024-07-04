@@ -3804,6 +3804,8 @@ int main(int argc, char *argv[])
         // Handle error...
     }
 
+    sqlite3_busy_timeout(sqldb, 5000);
+
     FILE *filecheck;
 
     // Open the file for writing. If it doesn't exist, it will be created.
