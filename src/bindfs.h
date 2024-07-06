@@ -12,6 +12,9 @@ static const int lensrcprefix = sizeof(srcprefix)-1;
 static const char mrgsrcprefix[] = "/virtual";
 static const int lenmrgsrcprefix = sizeof(mrgsrcprefix)-1;
 
+static const char showdir[] = "/shows";
+static const int lenshowdir = sizeof(showdir)-1;
+
 static const char cache_check[] = "/cache_check";
 static const int lencache_check = sizeof(cache_check)-1;
 

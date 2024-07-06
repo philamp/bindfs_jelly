@@ -1152,6 +1152,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
         int64_t x_time_ago = 0;
 
+
         if(*path != '\0' && *path != '/' && strchr(path, '/') != NULL){
             // there is a filtering suffix, find it to build the SQL query
             
@@ -1191,6 +1192,12 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                 path++;
             }
             
+        }
+
+        if (strncmp(path, showdir, lenshowdir) == 0 ){
+            //path += lenshowdir;
+            // comes back here
+
         }
 
 
@@ -1236,7 +1243,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
                 const char *dot = strrchr(lastPart, '.');
                 // TODO : complete the list of accepted filetypes
-                if (dot != NULL && (strcmp(dot, ".mkv") == 0 || strcmp(dot, ".mp4") == 0 || strcmp(dot, ".avi") == 0)){
+                if (dot != NULL && (strcasecmp (dot, ".mkv") == 0 || strcasecmp (dot, ".mp4") == 0 || strcasecmp (dot, ".wmv") == 0 || strcasecmp (dot, ".mov") == 0 || strcasecmp (dot, ".m4v") == 0 || strcasecmp (dot, ".mpg") == 0 ||  strcasecmp (dot, ".ifo") == 0 || strcasecmp (dot, ".bdmv") == 0 || strcasecmp (dot, ".avi") == 0)){
                     char *intermediate = malloc((dot - lastPart) +1);
                     strncpy(intermediate, lastPart, dot - lastPart);
                     intermediate[dot - lastPart] = '\0'; // null terminate !!!
