@@ -1186,6 +1186,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             SQL_READDIR_FINAL = (char*)SQL_READDIR;
         }
 
+        // to avoid cases where *path is somewhere betwen a not included / and no further / later in the string (when path has no slash anymore in it)
         if (*path == '\0' || strchr(path, '/') == NULL){
 
             while(*path != '\0'){
@@ -1195,8 +1196,19 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         }
 
         if (strncmp(path, showdir, lenshowdir) == 0 ){
-            //path += lenshowdir;
-            // comes back here
+            if(count_chars(path, '/') == 2){
+
+                char *nfoFile = sprintf_new("tvshow.nfo"); // will be freed by fuse
+                struct stat stnfo;
+                res = getattr_jelly((char*)nfoFile, &stnfo);
+                #ifdef HAVE_FUSE_3
+                filler(buf, (char*)nfoFile, &stnfo, 0, FUSE_FILL_DIR_PLUS);
+                #else
+                filler(buf, (char*)nfoFile, &stnfo, 0);
+                #endif
+                
+
+            }
 
         }
 
@@ -1243,7 +1255,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
                 const char *dot = strrchr(lastPart, '.');
                 // TODO : complete the list of accepted filetypes
-                if (dot != NULL && (strcasecmp (dot, ".mkv") == 0 || strcasecmp (dot, ".mp4") == 0 || strcasecmp (dot, ".wmv") == 0 || strcasecmp (dot, ".mov") == 0 || strcasecmp (dot, ".m4v") == 0 || strcasecmp (dot, ".mpg") == 0 ||  strcasecmp (dot, ".ifo") == 0 || strcasecmp (dot, ".bdmv") == 0 || strcasecmp (dot, ".avi") == 0)){
+                if (dot != NULL && (strcasecmp (dot, ".mkv") == 0 || strcasecmp (dot, ".mp4") == 0 || strcasecmp (dot, ".wmv") == 0 || strcasecmp (dot, ".mov") == 0 || strcasecmp (dot, ".m4v") == 0 || strcasecmp (dot, ".mpg") == 0 ||  strcasecmp (dot, ".ifo") == 0 || strcasecmp (dot, ".bdmv") == 0 || strcasecmp (dot, ".avi") == 0 || strcasecmp (dot, ".iso") == 0)){
                     char *intermediate = malloc((dot - lastPart) +1);
                     strncpy(intermediate, lastPart, dot - lastPart);
                     intermediate[dot - lastPart] = '\0'; // null terminate !!!
