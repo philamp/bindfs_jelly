@@ -32,6 +32,7 @@ static const int lenlatestsuffix = sizeof(latestsuffix)-1;
 static const char cache_check_readme[] = "/mounts/cache_check_readme.txt";
 
 static const char filedefaultnfo_readme[] = "/mounts/filedefaultnfo_readme.txt";
+static const char filedefaultnfo_readme_p[] = "/mounts/filedefaultnfo_readme_p.txt";
 
 
 extern sqlite3 *sqldb;

@@ -3861,6 +3861,31 @@ int main(int argc, char *argv[])
 
 
 
+
+
+
+    FILE *filedefaultnfo_p;
+
+    // Open the file for writing. If it doesn't exist, it will be created.
+    filedefaultnfo_p = fopen(filedefaultnfo_readme_p, "w");
+
+    if (filedefaultnfo_p == NULL) {
+        // Error handling
+        fprintf(stderr, "Error opening file!\n");
+        return 1;
+    }
+
+    // Write some text to the file
+    fprintf(filedefaultnfo_p, "This is the default content for nfo files in case of python service failure.\nHappens if Python was not able to find or generate the nfo.\nPlease report this issue in the corresponding JellyGrail github page.");
+
+    // Close the file
+    fclose(filedefaultnfo_p);
+
+
+
+
+
+
     // end custom jelly fork
 
 #if defined(HAVE_FUSE_29) || defined(HAVE_FUSE_3)
