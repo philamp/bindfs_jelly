@@ -204,6 +204,7 @@ static struct Settings {
 
     int hide_hard_links;
     int resolve_symlinks;
+    int display_nfo_files;
 
     int block_devices_as_files;
 
@@ -497,33 +498,33 @@ static char *process_path_new(const char *path, bool resolve_symlinks, time_t *t
 
 
 
+        if(settings.display_nfo_files){
+            const char *dot = strrchr(path, '.');
+            if(dot != NULL && strcmp(dot, ".nfo") == 0){
 
-        const char *dot = strrchr(path, '.');
-        if(dot != NULL && strcmp(dot, ".nfo") == 0){
+                char buffer[1024] = {0};
 
-            char buffer[1024] = {0};
+                //const char path[] = "message 1";
 
-            //const char path[] = "message 1";
+                if (send(sockfd, path, strlen(path), 0) < 0){
+                    //fprintf(stderr, "Failed to send to socket. Alternate logic needed\n");
+                    // TODO alternate logic here (same as if response is not received)
+                    return strdup(filedefaultnfo_readme);
+                }
+                
 
-            if (send(sockfd, path, strlen(path), 0) < 0){
-                fprintf(stderr, "Failed to send to socket. Alternate logic needed\n");
-                // TODO alternate logic here (same as if response is not received)
-                return strdup(filedefaultnfo_readme);
+                int valread = read(sockfd, buffer, sizeof(buffer) - 1);
+                if (valread > 0) {
+                    return strdup(buffer);
+                }else{
+                    //fprintf(stderr, "Failed to receive from socket. Alternate logic needed\n");
+                    // TODO alternate logic here (same as if response is not received)
+                    return strdup(filedefaultnfo_readme);
+                }
+
+
             }
-            
-
-            int valread = read(sockfd, buffer, sizeof(buffer) - 1);
-            if (valread > 0) {
-                return strdup(buffer);
-            }else{
-                fprintf(stderr, "Failed to receive from socket. Alternate logic needed\n");
-                // TODO alternate logic here (same as if response is not received)
-                return strdup(filedefaultnfo_readme);
-            }
-
-
         }
-
 
 
         // remap path to the first found "/" because virtual can now have suffix for read dir filtering (ex: virtual_bdmv)
@@ -1195,23 +1196,24 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             
         }
 
-        if (strncmp(path, showdir, lenshowdir) == 0 ){
-            if(count_chars(path, '/') == 2){
+        if(settings.display_nfo_files){
+            if (strncmp(path, showdir, lenshowdir) == 0 ){
+                if(count_chars(path, '/') == 2){
 
-                char *nfoFile = sprintf_new("tvshow.nfo"); // will be freed by fuse
-                struct stat stnfo;
-                res = getattr_jelly((char*)nfoFile, &stnfo);
-                #ifdef HAVE_FUSE_3
-                filler(buf, (char*)nfoFile, &stnfo, 0, FUSE_FILL_DIR_PLUS);
-                #else
-                filler(buf, (char*)nfoFile, &stnfo, 0);
-                #endif
-                
+                    char *nfoFile = sprintf_new("tvshow.nfo"); // will be freed by fuse
+                    struct stat stnfo;
+                    res = getattr_jelly((char*)nfoFile, &stnfo);
+                    #ifdef HAVE_FUSE_3
+                    filler(buf, (char*)nfoFile, &stnfo, 0, FUSE_FILL_DIR_PLUS);
+                    #else
+                    filler(buf, (char*)nfoFile, &stnfo, 0);
+                    #endif
+                    
+
+                }
 
             }
-
         }
-
 
         sqlite3_stmt *stmt;
 
@@ -1246,42 +1248,46 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
             struct stat stc;
             res = getattr_jelly((char*)actual, &stc);
             if(res != 0){
-                printf("File targeted by Path %s does not exist, error is: %s",actual,strerror(-res));
+                printf("File targeted %s does not exist, error is: %s",actual,strerror(-res));
             }
             else{
                 char *lastPart = strrchr((char*)virtual, '/') +1;
 
 
-
+                
                 const char *dot = strrchr(lastPart, '.');
-                // TODO : complete the list of accepted filetypes
-                if (dot != NULL && (strcasecmp (dot, ".mkv") == 0 || strcasecmp (dot, ".mp4") == 0 || strcasecmp (dot, ".wmv") == 0 || strcasecmp (dot, ".mov") == 0 || strcasecmp (dot, ".m4v") == 0 || strcasecmp (dot, ".mpg") == 0 ||  strcasecmp (dot, ".ifo") == 0 || strcasecmp (dot, ".bdmv") == 0 || strcasecmp (dot, ".avi") == 0 || strcasecmp (dot, ".iso") == 0)){
-                    char *intermediate = malloc((dot - lastPart) +1);
-                    strncpy(intermediate, lastPart, dot - lastPart);
-                    intermediate[dot - lastPart] = '\0'; // null terminate !!!
-                    char *nfoFile = sprintf_new("%s.nfo", intermediate); // will be freed by fuse
-                    struct stat stnfo;
-                    res = getattr_jelly((char*)nfoFile, &stnfo);
+                // if display_nfo_files -> display dynamic nfo files 
+                if(settings.display_nfo_files){
+                    // TODO : complete the list of accepted filetypes
+                    if (dot != NULL && (strcasecmp (dot, ".mkv") == 0 || strcasecmp (dot, ".mp4") == 0 || strcasecmp (dot, ".wmv") == 0 || strcasecmp (dot, ".mov") == 0 || strcasecmp (dot, ".m4v") == 0 || strcasecmp (dot, ".mpg") == 0 ||  strcasecmp (dot, ".ifo") == 0 || strcasecmp (dot, ".bdmv") == 0 || strcasecmp (dot, ".avi") == 0 || strcasecmp (dot, ".iso") == 0)){
+                        char *intermediate = malloc((dot - lastPart) +1);
+                        strncpy(intermediate, lastPart, dot - lastPart);
+                        intermediate[dot - lastPart] = '\0'; // null terminate !!!
+                        char *nfoFile = sprintf_new("%s.nfo", intermediate); // will be freed by fuse
+                        struct stat stnfo;
+                        res = getattr_jelly((char*)nfoFile, &stnfo);
+                        #ifdef HAVE_FUSE_3
+                        if (filler(buf, (char*)nfoFile, &stnfo, 0, FUSE_FILL_DIR_PLUS) != 0) {
+                        #else
+                        if (filler(buf, (char*)nfoFile, &stnfo, 0) != 0) {
+                        #endif
+                        result = errno != 0 ? -errno : -EIO;
+                        break;
+                        }
+
+                        free(intermediate);
+                    }
+                }
+                // if display_nfo_files -> ...and not ones stored in sqlite
+                if ( !((dot != NULL && strcasecmp(dot, ".nfo") == 0) && settings.display_nfo_files) ){
                     #ifdef HAVE_FUSE_3
-                    if (filler(buf, (char*)nfoFile, &stnfo, 0, FUSE_FILL_DIR_PLUS) != 0) {
+                    if (filler(buf, (char*)lastPart, &stc, 0, FUSE_FILL_DIR_PLUS) != 0) {
                     #else
-                    if (filler(buf, (char*)nfoFile, &stnfo, 0) != 0) {
+                    if (filler(buf, (char*)lastPart, &stc, 0) != 0) {
                     #endif
                     result = errno != 0 ? -errno : -EIO;
                     break;
                     }
-
-                    free(intermediate);
-                }
-
-
-                #ifdef HAVE_FUSE_3
-                if (filler(buf, (char*)lastPart, &stc, 0, FUSE_FILL_DIR_PLUS) != 0) {
-                #else
-                if (filler(buf, (char*)lastPart, &stc, 0) != 0) {
-                #endif
-                result = errno != 0 ? -errno : -EIO;
-                break;
                 }
 
 
@@ -1476,8 +1482,6 @@ static int bindfs_mknod(const char *path, mode_t mode, dev_t rdev)
     struct fuse_context *fc;
     char *real_path;
 
-    printf("------MKNOD-CALLED----");
-
     real_path = process_path(path, true);
     if (real_path == NULL)
         return -errno;
@@ -1568,7 +1572,7 @@ static int bindfs_mkdir(const char *path, mode_t mode)
             sqlite3_finalize(stmt);
             return -EPERM;
         } else {
-            printf("Mkdir successfully\n");
+            //printf("Mkdir successfully\n");
             sqlite3_finalize(stmt);
             return 0;
         }
@@ -1645,7 +1649,7 @@ static int bindfs_rmdir(const char *path)
             sqlite3_finalize(stmtd);
             return -EPERM;
         } else {
-            printf("DD: Folder deleted successfully\n");
+            //printf("DD: Folder deleted successfully\n");
             sqlite3_finalize(stmtd);
             return 0;
         }
@@ -1699,7 +1703,7 @@ static int bindfs_rename(const char *from, const char *to)
     char *real_from, *real_to;
 
     
-    printf("rename de %s en %s", from, to);
+    //printf("rename de %s en %s", from, to);
 
     if (strncmp(to, mrgsrcprefix, lenmrgsrcprefix) == 0 && strncmp(from, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         
@@ -1808,7 +1812,7 @@ static int bindfs_rename(const char *from, const char *to)
             free(to_parent_path);
             return -EPERM;
         } else {
-            printf("Renamed successfully\n");
+            //printf("Renamed successfully\n");
             sqlite3_finalize(stmt);
             free(to_parent_path);
             return 0;
@@ -2087,7 +2091,7 @@ static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *f
 
     static const char fallbackd[] = "fallback";
 
-    printf("---CREATE CALLED----");
+    //printf("---CREATE CALLED----");
 
     // if inside virtual
     // 1 - create the real file in /fallback 
@@ -2115,14 +2119,16 @@ static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *f
         if (stat(fallbackd, &st) == -1) {
             // Folder does not exist, create it
             if (mkdir(fallbackd, 0755) == -1) {
-                perror("Error creating directory");
+                fprintf(stderr,"Error creating directory");
                 return 1;
             } else {
-                printf("Directory created\n");
+                printf("Fallback Directory created\n");
             }
-        } else {
-            printf("Directory already exists\n");
+        } 
+        /*else {
+            printf("Fallback Directory already exists\n");
         }
+        */
 
         // input is /a/file.ext
         // outcome must be fallback/file.ext.i
@@ -2167,7 +2173,7 @@ static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *f
             sqlite3_finalize(stmt);
             return -EPERM;
         } else {
-            printf("NEW FILE successfully created\n");
+            //printf("NEW FILE successfully created\n");
             sqlite3_finalize(stmt);
         }
 
@@ -2787,6 +2793,7 @@ enum OptionKey {
     OPTKEY_ENABLE_IOCTL,
     OPTKEY_HIDE_HARD_LINKS,
     OPTKEY_RESOLVE_SYMLINKS,
+    OPTKEY_DISPLAY_NFO_FILES,
     OPTKEY_BLOCK_DEVICES_AS_FILES,
     OPTKEY_DIRECT_IO,
     OPTKEY_NO_DIRECT_IO
@@ -2893,6 +2900,9 @@ static int process_option(void *data, const char *arg, int key,
         return 0;
     case OPTKEY_RESOLVE_SYMLINKS:
         settings.resolve_symlinks = 1;
+        return 0;
+    case OPTKEY_DISPLAY_NFO_FILES:
+        settings.display_nfo_files = 1;
         return 0;
     case OPTKEY_BLOCK_DEVICES_AS_FILES:
         settings.block_devices_as_files = 1;
@@ -3411,6 +3421,7 @@ int main(int argc, char *argv[])
 
         OPT2("--hide-hard-links", "hide-hard-links", OPTKEY_HIDE_HARD_LINKS),
         OPT2("--resolve-symlinks", "resolve-symlinks", OPTKEY_RESOLVE_SYMLINKS),
+        OPT2("--display-nfo", "display-nfo", OPTKEY_DISPLAY_NFO_FILES),
         OPT_OFFSET2("--resolved-symlink-deletion=%s", "resolved-symlink-deletion=%s", resolved_symlink_deletion, -1),
         OPT2("--block-devices-as-files", "block-devices-as-files", OPTKEY_BLOCK_DEVICES_AS_FILES),
 
@@ -3948,7 +3959,7 @@ int main(int argc, char *argv[])
     // Connect to the server
     int socket_tries = 0;
     int will_fail = 0;
-    printf("Python socket not yet ready, retry every 1s ...");
+    printf("Python socket not yet ready, retry every 1s for 30s and then give up ...");
     while (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
          printf(".");
          fflush(stdout);
@@ -4005,7 +4016,7 @@ static int getattr_jelly(const char *procpath, struct stat *stbuf)
         return 0;
     }
 
-    
+    /*
     const char *dot = strrchr(procpath, '.');
     if(dot != NULL && strcmp(dot, ".nfo") == 0){
         stbuf->st_mode = S_IFREG | 0644;
@@ -4015,6 +4026,7 @@ static int getattr_jelly(const char *procpath, struct stat *stbuf)
         stbuf->st_gid = gid_jelly;
         return 0;
     }
+    */
     
     
 
