@@ -1259,7 +1259,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                 // if display_nfo_files -> display dynamic nfo files 
                 if(settings.display_nfo_files){
                     // TODO : complete the list of accepted filetypes
-                    if (dot != NULL && (strcasecmp (dot, ".mkv") == 0 || strcasecmp (dot, ".mp4") == 0 || strcasecmp (dot, ".wmv") == 0 || strcasecmp (dot, ".mov") == 0 || strcasecmp (dot, ".m4v") == 0 || strcasecmp (dot, ".mpg") == 0 ||  strcasecmp (dot, ".ifo") == 0 || strcasecmp (dot, ".bdmv") == 0 || strcasecmp (dot, ".avi") == 0 || strcasecmp (dot, ".iso") == 0)){
+                    if (dot != NULL && (strcasecmp (dot, ".mkv") == 0 || strcasecmp (dot, ".mp4") == 0 || strcasecmp (dot, ".wmv") == 0 || strcasecmp (dot, ".mov") == 0 || strcasecmp (dot, ".m4v") == 0 || strcasecmp (dot, ".mpg") == 0 ||  strcasecmp (lastPart, "video_ts.ifo") == 0 || strcasecmp (lastPart, "index.bdmv") == 0 || strcasecmp (dot, ".avi") == 0 || strcasecmp (dot, ".iso") == 0)){
                         char *intermediate = malloc((dot - lastPart) +1);
                         strncpy(intermediate, lastPart, dot - lastPart);
                         intermediate[dot - lastPart] = '\0'; // null terminate !!!
@@ -3939,42 +3939,46 @@ int main(int argc, char *argv[])
     /* fuse_main will daemonize by fork()'ing. The signal handler will persist. */
     setup_signal_handling();
 
+    if(settings.display_nfo_files){
     // --- jelly_socket ---
-    struct sockaddr_un serv_addr;
+        struct sockaddr_un serv_addr;
 
-    // Create a UNIX socket
-    if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
-        fprintf(stderr, "Socket creation error");
-    }
+        // Create a UNIX socket
+        if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+            fprintf(stderr, "Socket creation error");
+        }
 
-    if (set_socket_timeout(sockfd, 5) < 0) {
-        fprintf(stderr, "Socket tiemout setup error");
-    }
+        if (set_socket_timeout(sockfd, 5) < 0) {
+            fprintf(stderr, "Socket tiemout setup error");
+        }
 
-    // Initialize the sockaddr_un structure
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sun_family = AF_UNIX;
-    strncpy(serv_addr.sun_path, SOCKET_NFO_PATH, sizeof(serv_addr.sun_path) - 1);
+        // Initialize the sockaddr_un structure
+        memset(&serv_addr, 0, sizeof(serv_addr));
+        serv_addr.sun_family = AF_UNIX;
+        strncpy(serv_addr.sun_path, SOCKET_NFO_PATH, sizeof(serv_addr.sun_path) - 1);
 
-    // Connect to the server
-    int socket_tries = 0;
-    int will_fail = 0;
-    printf("Python socket not yet ready, retry every 1s for 30s and then give up ...");
-    while (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-         printf(".");
-         fflush(stdout);
-         sleep(1);
-         socket_tries += 1;
-         if (socket_tries > 30){
-            fprintf(stderr,"Critical - Python socket unavailable \n");
-            will_fail = 1;
-            break;
-         }
-    }
-    if(will_fail == 0){
-        printf("-- Connexion successful --\n");
-    }
+        // Connect to the server
+        int socket_tries = 0;
+        int will_fail = 0;
+        printf("dyn. NFO enabled - Python socket not yet ready, retry every 1s for 30s and then give up ...");
+        while (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+            printf(".");
+            fflush(stdout);
+            sleep(1);
+            socket_tries += 1;
+            if (socket_tries > 30){
+                fprintf(stderr,"Critical - Python socket unavailable \n");
+                will_fail = 1;
+                break;
+            }
+        }
+        if(will_fail == 0){
+            printf("-- Connexion successful --\n");
+        }
     // --- jelly_socket end---
+    }else{
+        printf("dyn. NFO disabled");
+    }
 
     fuse_main_return = fuse_main(args.argc, args.argv, &bindfs_oper, NULL);
 
