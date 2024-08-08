@@ -496,10 +496,23 @@ static char *process_path_new(const char *path, bool resolve_symlinks, time_t *t
     else if (strncmp(path, mrgsrcprefix, lenmrgsrcprefix) == 0) {
         path += lenmrgsrcprefix; // 1 - Skip the "/virtual" part
 
+        // remap path to the first found "/" because virtual can now have suffix for read dir filtering (ex: virtual_bdmv)
+        if (*path != '\0' && *path != '/' && strchr(path, '/') != NULL){
+            path = strchr(path, '/');
+        }
 
+        // 2- if then path is just "", there is no item to resolve in db (so it's a folder) 
+        if (*path == '\0' || strchr(path, '/') == NULL){
+            //path = ".";
+            while(*path != '\0'){
+                path++;
+            }
+            return strdup(path);
+        }
 
         if(settings.display_nfo_files){
             const char *dot = strrchr(path, '.');
+
             if(dot != NULL && strcmp(dot, ".nfo") == 0){
 
                 char buffer[1024] = {0};
@@ -527,19 +540,7 @@ static char *process_path_new(const char *path, bool resolve_symlinks, time_t *t
         }
 
 
-        // remap path to the first found "/" because virtual can now have suffix for read dir filtering (ex: virtual_bdmv)
-        if (*path != '\0' && *path != '/' && strchr(path, '/') != NULL){
-            path = strchr(path, '/');
-        }
 
-        // 2- if then path is just "", there is no item to resolve in db (so it's a folder) 
-        if (*path == '\0' || strchr(path, '/') == NULL){
-            //path = ".";
-            while(*path != '\0'){
-                path++;
-            }
-            return strdup(path);
-        }
     
         sqlite3_stmt *stmt;
         
@@ -1259,7 +1260,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                 // if display_nfo_files -> display dynamic nfo files 
                 if(settings.display_nfo_files){
                     // TODO : complete the list of accepted filetypes
-                    if (dot != NULL && (strcasecmp (dot, ".mkv") == 0 || strcasecmp (dot, ".mp4") == 0 || strcasecmp (dot, ".wmv") == 0 || strcasecmp (dot, ".mov") == 0 || strcasecmp (dot, ".m4v") == 0 || strcasecmp (dot, ".mpg") == 0 ||  strcasecmp (lastPart, "video_ts.ifo") == 0 || strcasecmp (lastPart, "index.bdmv") == 0 || strcasecmp (dot, ".avi") == 0 || strcasecmp (dot, ".iso") == 0)){
+                    if (dot != NULL && (strcasecmp (dot, ".mkv") == 0 || strcasecmp (dot, ".mp4") == 0 || strcasecmp (dot, ".wmv") == 0 || strcasecmp (dot, ".mov") == 0 || strcasecmp (dot, ".m4v") == 0 || strcasecmp (dot, ".mpg") == 0 || strcasecmp (lastPart, "index.bdmv") == 0 || strcasecmp (lastPart, "video_ts.ifo") == 0 || strcasecmp (dot, ".avi") == 0 || strcasecmp (dot, ".iso") == 0)){
                         char *intermediate = malloc((dot - lastPart) +1);
                         strncpy(intermediate, lastPart, dot - lastPart);
                         intermediate[dot - lastPart] = '\0'; // null terminate !!!
