@@ -1260,7 +1260,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                 // if display_nfo_files -> display dynamic nfo files 
                 if(settings.display_nfo_files){
                     // TODO : complete the list of accepted filetypes
-                    if (dot != NULL && (strcasecmp (dot, ".mkv") == 0 || strcasecmp (dot, ".mp4") == 0 || strcasecmp (dot, ".wmv") == 0 || strcasecmp (dot, ".mov") == 0 || strcasecmp (dot, ".m4v") == 0 || strcasecmp (dot, ".mpg") == 0 || strcasecmp (lastPart, "index.bdmv") == 0 || strcasecmp (lastPart, "video_ts.ifo") == 0 || strcasecmp (dot, ".avi") == 0 || strcasecmp (dot, ".iso") == 0)){
+                    if (dot != NULL && (strcasecmp (dot, ".mkv") == 0 || strcasecmp (dot, ".mp4") == 0 || strcasecmp (dot, ".wmv") == 0 || strcasecmp (dot, ".mov") == 0 || strcasecmp (dot, ".m4v") == 0 || strcasecmp (dot, ".mpg") == 0 || strcasecmp (lastPart, "index.bdmv") == 0 || strcasecmp (lastPart, "video_ts.ifo") == 0 || strcasecmp (dot, ".avi") == 0 || strcasecmp (dot, ".iso") == 0 || strcasecmp (dot, ".ts") == 0)){
                         char *intermediate = malloc((dot - lastPart) +1);
                         strncpy(intermediate, lastPart, dot - lastPart);
                         intermediate[dot - lastPart] = '\0'; // null terminate !!!
