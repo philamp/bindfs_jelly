@@ -3812,7 +3812,7 @@ int main(int argc, char *argv[])
     char *errMsg = NULL;
     int rc = 0;
 
-    const char* dbpath = "/jellygrail/.bindfs_jelly.db";
+    const char* dbpath = "/jellygrail/data/bindfs/.bindfs_jelly.db";
 
     rc = sqlite3_open(dbpath, &sqldb);
     if (rc != SQLITE_OK) {
